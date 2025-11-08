@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+build/
+*.js
+*.js.map
+*.d.ts
+
+# Keep specific files
+!src/**/*
+!examples/**/*
+!templates/**/*
+
+# Data and logs
+data/
+logs/
+*.log
+*.db
+*.db-journal
+
+# Reports
+reports/
+screenshots/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Config overrides
+pixeldust.config.local.json

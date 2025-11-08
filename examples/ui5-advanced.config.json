@@ -1,0 +1,62 @@
+{
+  "framework": {
+    "name": "ui5-webcomponents",
+    "versions": ["1.20.0", "1.24.0", "2.0.0"]
+  },
+  "components": {
+    "exclude": ["ui5-shellbar"]
+  },
+  "containers": {
+    "runtime": "podman",
+    "baseImage": "node:20-alpine",
+    "resources": {
+      "memory": "4g",
+      "cpu": 4
+    },
+    "network": {
+      "mode": "bridge"
+    }
+  },
+  "testing": {
+    "browsers": ["chromium", "firefox", "webkit"],
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "timeout": 60000,
+    "retries": 3,
+    "headless": true
+  },
+  "analysis": {
+    "visualThreshold": 0.05,
+    "domIgnoreAttributes": [
+      "data-testid",
+      "data-qa",
+      "data-sap-ui",
+      "id"
+    ],
+    "performanceThresholds": {
+      "fcp": 1500,
+      "lcp": 2000,
+      "tti": 3000
+    }
+  },
+  "ai": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5-20250929",
+    "temperature": 0.5,
+    "maxTokens": 8192
+  },
+  "storage": {
+    "type": "s3",
+    "path": "./data",
+    "s3": {
+      "bucket": "pixeldust-results",
+      "region": "us-east-1"
+    }
+  },
+  "reporting": {
+    "format": ["markdown", "html", "json"],
+    "outputPath": "./reports"
+  }
+}

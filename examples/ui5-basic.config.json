@@ -1,0 +1,55 @@
+{
+  "framework": {
+    "name": "ui5-webcomponents",
+    "versions": ["1.24.0", "2.0.0"]
+  },
+  "components": {
+    "include": [
+      "ui5-button",
+      "ui5-input",
+      "ui5-card",
+      "ui5-table"
+    ]
+  },
+  "containers": {
+    "runtime": "docker",
+    "baseImage": "node:18-alpine",
+    "resources": {
+      "memory": "2g",
+      "cpu": 2
+    }
+  },
+  "testing": {
+    "browsers": ["chromium"],
+    "viewport": {
+      "width": 1920,
+      "height": 1080
+    },
+    "timeout": 30000,
+    "retries": 2,
+    "headless": true
+  },
+  "analysis": {
+    "visualThreshold": 0.1,
+    "domIgnoreAttributes": ["data-testid", "data-qa"],
+    "performanceThresholds": {
+      "fcp": 1800,
+      "lcp": 2500,
+      "tti": 3800
+    }
+  },
+  "ai": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5-20250929",
+    "temperature": 0.7,
+    "maxTokens": 4096
+  },
+  "storage": {
+    "type": "local",
+    "path": "./data"
+  },
+  "reporting": {
+    "format": ["markdown", "html"],
+    "outputPath": "./reports"
+  }
+}

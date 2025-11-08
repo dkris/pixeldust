@@ -1,0 +1,57 @@
+/**
+ * PixelDust - Agentic UI Version Testing System
+ *
+ * Main entry point for programmatic usage
+ */
+
+// Core exports
+export { OrchestratorAgent } from './agents/orchestrator-agent';
+export { EnvironmentAgent } from './agents/environment-agent';
+export { TestGenerationAgent } from './agents/test-generation-agent';
+export { ExecutionAgent } from './agents/execution-agent';
+export { AnalysisAgent } from './agents/analysis-agent';
+export { RemediationAgent } from './agents/remediation-agent';
+export { ImplementationAgent } from './agents/implementation-agent';
+export { ReviewAgent } from './agents/review-agent';
+
+// Storage
+export { DatabaseManager } from './storage/database';
+
+// Core
+export { ConfigLoader } from './core/config-loader';
+export { ReportGenerator } from './core/report-generator';
+
+// Utils
+export { Logger } from './utils/logger';
+
+// Types
+export * from './types';
+
+/**
+ * Main API for programmatic usage
+ */
+export class PixelDust {
+  static async run(config: any) {
+    const { OrchestratorAgent } = await import('./agents/orchestrator-agent');
+    const { DatabaseManager } = await import('./storage/database');
+    const { v4: uuidv4 } = await import('uuid');
+
+    const db = new DatabaseManager();
+    const orchestrator = new OrchestratorAgent(db);
+
+    const session = {
+      id: uuidv4(),
+      state: 'IDLE' as any,
+      config,
+      versions: config.framework.versions,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await orchestrator.execute({ session, config });
+
+    db.close();
+
+    return result;
+  }
+}
