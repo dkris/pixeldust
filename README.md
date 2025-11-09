@@ -18,6 +18,50 @@ PixelDust is an AI-powered testing system that automatically:
 
 **🚀 Native Podman Support:** Full rootless and rootful Podman support with automatic socket detection. See [PODMAN.md](./PODMAN.md) for details.
 
+## Current Capabilities & Limitations
+
+### ✅ What PixelDust Does (v0.1.0)
+
+PixelDust currently excels at **framework-level comparison and evaluation**:
+
+- **Framework Testing in Isolation**: Tests UI framework components across different versions
+- **Breaking Change Detection**: Identifies visual, DOM, and API differences between versions
+- **AI-Powered Analysis**: Generates comprehensive test suites and migration recommendations
+- **Visual Regression**: Pixel-perfect comparison with detailed diff reports
+- **Automated Remediation Proposals**: AI suggests code changes to handle breaking changes
+
+**Best For:**
+- Evaluating framework upgrades before committing
+- Understanding breaking changes between versions
+- Getting AI-generated migration strategies
+- Visual regression testing of UI components
+
+### ⚠️ Current Limitations
+
+PixelDust does **NOT** currently:
+
+- ❌ Test your actual application code
+- ❌ Automatically upgrade dependencies in your package.json
+- ❌ Fix your existing unit/integration tests after upgrades
+- ❌ Handle complex application-specific migration scenarios
+
+**Current workflow:**
+1. PixelDust tests framework versions in isolation
+2. You review the breaking changes and AI suggestions
+3. You manually apply fixes to your application
+4. You run your own test suite
+
+### 🚧 Planned Enhancements
+
+We're actively working on full application integration. See [ENHANCEMENT_PLAN.md](./ENHANCEMENT_PLAN.md) for:
+
+- **Application Code Integration** - Test your real app with different versions
+- **Dependency Upgrade Agent** - Automatically update package.json
+- **Test Fixing Agent** - Auto-fix broken tests after upgrades
+- **End-to-End Migration** - Complete automated upgrade workflow
+
+**Want these features?** See [APPLICATION_INTEGRATION.md](./APPLICATION_INTEGRATION.md) for workarounds and how to contribute.
+
 ## Architecture
 
 ```
