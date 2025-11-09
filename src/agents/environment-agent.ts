@@ -2,31 +2,38 @@ import { BaseAgent } from './base-agent';
 import { AgentType, AgentContext, AgentResult, Container, ContainerStatus } from '../types';
 import Dockerode from 'dockerode';
 import { v4 as uuidv4 } from 'uuid';
+import { ContainerRuntimeManager } from '../utils/container-runtime';
 
 /**
  * Environment Agent - Manages container lifecycle for version testing
  *
  * Responsibilities:
- * - Create containers for each version
+ * - Create containers for each version (Docker or Podman)
  * - Configure networking
  * - Health checks
  * - Resource management
  * - Cleanup
+ *
+ * Supports both Docker and Podman with automatic detection and native socket configuration
  */
 export class EnvironmentAgent extends BaseAgent {
-  private docker: Dockerode;
+  private docker: Dockerode | null = null;
   private containers: Map<string, Container> = new Map();
+  private runtime: 'docker' | 'podman' = 'docker';
+  private isRootless: boolean = false;
 
   constructor() {
     super(AgentType.ENVIRONMENT);
-    this.docker = new Dockerode();
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
     const { config, session } = context;
 
     try {
-      this.logger.info(`Setting up environments for ${session.versions.length} versions`);
+      // Initialize container runtime (Docker or Podman)
+      await this.initializeRuntime(config.containers.runtime);
+
+      this.logger.info(`Setting up environments for ${session.versions.length} versions using ${this.runtime}`);
 
       const containers: Container[] = [];
 
@@ -48,11 +55,37 @@ export class EnvironmentAgent extends BaseAgent {
           id: c.id,
           ipAddress: c.ipAddress,
           port: c.port,
+          runtime: this.runtime,
         })),
+        runtime: this.runtime,
+        isRootless: this.isRootless,
       });
     } catch (error) {
       await this.cleanup();
       return this.failure(error as Error);
+    }
+  }
+
+  /**
+   * Initialize container runtime (Docker or Podman)
+   */
+  private async initializeRuntime(preferredRuntime?: 'docker' | 'podman'): Promise<void> {
+    try {
+      this.logger.info(`Initializing container runtime: ${preferredRuntime || 'auto-detect'}`);
+
+      const { client, config } = await ContainerRuntimeManager.configure(preferredRuntime);
+
+      this.docker = client;
+      this.runtime = config.runtime;
+      this.isRootless = config.isRootless || false;
+
+      this.logger.info(
+        `Container runtime initialized: ${this.runtime} ` +
+        `(${this.isRootless ? 'rootless' : 'rootful'}, socket: ${config.socketPath})`
+      );
+    } catch (error) {
+      this.logger.error('Failed to initialize container runtime', error as Error);
+      throw error;
     }
   }
 
@@ -117,6 +150,10 @@ export class EnvironmentAgent extends BaseAgent {
   }
 
   private async pullImage(image: string): Promise<void> {
+    if (!this.docker) {
+      throw new Error('Container runtime not initialized');
+    }
+
     try {
       // Check if image exists locally
       await this.docker.getImage(image).inspect();
@@ -127,7 +164,7 @@ export class EnvironmentAgent extends BaseAgent {
       const stream = await this.docker.pull(image);
 
       await new Promise((resolve, reject) => {
-        this.docker.modem.followProgress(stream, (err, res) => {
+        this.docker!.modem.followProgress(stream, (err, res) => {
           if (err) reject(err);
           else resolve(res);
         });
@@ -138,6 +175,10 @@ export class EnvironmentAgent extends BaseAgent {
   }
 
   private async waitForHealthy(containers: Container[]): Promise<void> {
+    if (!this.docker) {
+      throw new Error('Container runtime not initialized');
+    }
+
     this.logger.info('Waiting for containers to be healthy');
 
     const healthChecks = containers.map(async (container) => {
@@ -146,7 +187,7 @@ export class EnvironmentAgent extends BaseAgent {
 
       for (let i = 0; i < maxRetries; i++) {
         try {
-          const dockerContainer = this.docker.getContainer(container.id);
+          const dockerContainer = this.docker!.getContainer(container.id);
           const info = await dockerContainer.inspect();
 
           if (info.State.Running) {
@@ -185,6 +226,11 @@ export class EnvironmentAgent extends BaseAgent {
   }
 
   async cleanup(): Promise<void> {
+    if (!this.docker) {
+      this.logger.warn('Container runtime not initialized, skipping cleanup');
+      return;
+    }
+
     this.logger.info('Cleaning up containers');
 
     for (const [version, container] of this.containers) {

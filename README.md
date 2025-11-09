@@ -8,13 +8,15 @@ An intelligent, multi-agent system for automated UI version testing, visual regr
 ## Overview
 
 PixelDust is an AI-powered testing system that automatically:
-- ✅ Spins up isolated environments for each framework version
+- ✅ Spins up isolated environments for each framework version (Docker **or Podman**)
 - 🤖 Generates comprehensive Playwright tests using AI
 - 📸 Captures screenshots for visual regression testing
 - 🔍 Performs detailed DOM and performance comparisons
 - 💡 Proposes intelligent remediations for breaking changes
 - 🔧 Autonomously implements approved fixes
 - 🔄 Iterates until all tests pass
+
+**🚀 Native Podman Support:** Full rootless and rootful Podman support with automatic socket detection. See [PODMAN.md](./PODMAN.md) for details.
 
 ## Architecture
 
@@ -430,7 +432,9 @@ await orchestrator.execute({ session, config: myConfig });
 ## Requirements
 
 - Node.js >= 18.0.0
-- Docker or Podman
+- **Container Runtime:** Docker or Podman (native support for both)
+  - Docker: Standard installation
+  - Podman: Rootless or rootful with socket enabled ([setup guide](./PODMAN.md))
 - Anthropic API key (or OpenAI API key)
 
 ## Contributing
