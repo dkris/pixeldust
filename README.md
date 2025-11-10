@@ -1,4 +1,4 @@
-# PixelDust - Agentic UI Version Testing System
+![helix-architecture](https://github.com/user-attachments/assets/8941f4c1-195b-4d01-a2cc-b8232f80d512)# PixelDust - Agentic UI Version Testing System
 
 An intelligent, multi-agent system for automated UI version testing, visual regression detection, and autonomous remediation.
 
@@ -55,6 +55,290 @@ PixelDust is an AI-powered testing system that automatically:
 7. 📊 Generate comprehensive reports
 
 ## Architecture
+
+![Uploading helix-architecture.svg…]<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="orchestratorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f093fb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f5576c;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="triggerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="agentGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#43e97b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#38f9d7;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Shadows -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1400" height="900" fill="#0f0f23"/>
+  
+  <!-- Main Container -->
+  <rect x="50" y="40" width="1300" height="820" rx="20" fill="#1a1a2e" stroke="#667eea" stroke-width="2" filter="url(#shadow)"/>
+  
+  <!-- Header -->
+  <rect x="50" y="40" width="1300" height="80" rx="20" fill="url(#headerGrad)" filter="url(#shadow)"/>
+  <text x="700" y="85" font-family="'Segoe UI', Arial, sans-serif" font-size="32" font-weight="bold" fill="white" text-anchor="middle">
+    AGENTIC UI TESTING SYSTEM
+  </text>
+  
+  <!-- Trigger Layer Container -->
+  <rect x="100" y="160" width="1200" height="140" rx="15" fill="#16213e" stroke="#4facfe" stroke-width="2" filter="url(#shadow)"/>
+  <text x="700" y="190" font-family="'Segoe UI', Arial, sans-serif" font-size="20" font-weight="600" fill="#4facfe" text-anchor="middle">
+    TRIGGER LAYER
+  </text>
+  
+  <!-- CLI Interface -->
+  <g filter="url(#shadow)">
+    <rect x="180" y="210" width="280" height="70" rx="10" fill="url(#triggerGrad)"/>
+    <text x="320" y="240" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="white" text-anchor="middle">
+      CLI Interface
+    </text>
+    <text x="320" y="265" font-family="'Segoe UI', Arial, sans-serif" font-size="14" fill="#e0e0e0" text-anchor="middle">
+      Command Line Tool
+    </text>
+  </g>
+  
+  <!-- VS Code Extension -->
+  <g filter="url(#shadow)">
+    <rect x="560" y="210" width="280" height="70" rx="10" fill="url(#triggerGrad)"/>
+    <text x="700" y="240" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="white" text-anchor="middle">
+      VS Code Extension
+    </text>
+    <text x="700" y="265" font-family="'Segoe UI', Arial, sans-serif" font-size="14" fill="#e0e0e0" text-anchor="middle">
+      IDE Integration
+    </text>
+  </g>
+  
+  <!-- Cursor Extension -->
+  <g filter="url(#shadow)">
+    <rect x="940" y="210" width="280" height="70" rx="10" fill="url(#triggerGrad)"/>
+    <text x="1080" y="240" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="white" text-anchor="middle">
+      Cursor Extension
+    </text>
+    <text x="1080" y="265" font-family="'Segoe UI', Arial, sans-serif" font-size="14" fill="#e0e0e0" text-anchor="middle">
+      IDE Integration
+    </text>
+  </g>
+  
+  <!-- Connection Line from Triggers to Orchestrator -->
+  <path d="M 700 300 L 700 350" stroke="#667eea" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Arrow marker -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#667eea" />
+    </marker>
+    <marker id="arrowhead-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#43e97b" />
+    </marker>
+  </defs>
+  
+  <!-- Orchestrator Agent -->
+  <g filter="url(#shadow)">
+    <rect x="300" y="350" width="800" height="120" rx="15" fill="url(#orchestratorGrad)"/>
+    <text x="700" y="385" font-family="'Segoe UI', Arial, sans-serif" font-size="24" font-weight="bold" fill="white" text-anchor="middle">
+      ORCHESTRATOR AGENT (Claude)
+    </text>
+    <text x="700" y="415" font-family="'Segoe UI', Arial, sans-serif" font-size="16" fill="white" text-anchor="middle">
+      • Coordinates all agents
+    </text>
+    <text x="700" y="440" font-family="'Segoe UI', Arial, sans-serif" font-size="16" fill="white" text-anchor="middle">
+      • Maintains state machine • Makes high-level decisions
+    </text>
+  </g>
+  
+  <!-- Connection Lines from Orchestrator to Agents -->
+  <path d="M 375 470 L 230 540" stroke="#43e97b" stroke-width="2.5" fill="none" marker-end="url(#arrowhead-green)"/>
+  <path d="M 475 470 L 400 540" stroke="#43e97b" stroke-width="2.5" fill="none" marker-end="url(#arrowhead-green)"/>
+  <path d="M 575 470 L 570 540" stroke="#43e97b" stroke-width="2.5" fill="none" marker-end="url(#arrowhead-green)"/>
+  <path d="M 700 470 L 700 540" stroke="#43e97b" stroke-width="2.5" fill="none" marker-end="url(#arrowhead-green)"/>
+  <path d="M 825 470 L 830 540" stroke="#43e97b" stroke-width="2.5" fill="none" marker-end="url(#arrowhead-green)"/>
+  <path d="M 925 470 L 1000 540" stroke="#43e97b" stroke-width="2.5" fill="none" marker-end="url(#arrowhead-green)"/>
+  <path d="M 1025 470 L 1170 540" stroke="#43e97b" stroke-width="2.5" fill="none" marker-end="url(#arrowhead-green)"/>
+  
+  <!-- Agent Layer -->
+  <!-- Environment Agent -->
+  <g filter="url(#shadow)">
+    <rect x="120" y="560" width="160" height="120" rx="12" fill="url(#agentGrad)"/>
+    <text x="200" y="595" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Environment
+    </text>
+    <text x="200" y="620" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Agent
+    </text>
+    <text x="200" y="645" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Setup & Config
+    </text>
+    <text x="200" y="665" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Version Control
+    </text>
+  </g>
+  
+  <!-- Test Generation Agent -->
+  <g filter="url(#shadow)">
+    <rect x="310" y="560" width="160" height="120" rx="12" fill="url(#agentGrad)"/>
+    <text x="390" y="595" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Test Gen
+    </text>
+    <text x="390" y="620" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Agent
+    </text>
+    <text x="390" y="645" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Playwright Tests
+    </text>
+    <text x="390" y="665" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Auto Generation
+    </text>
+  </g>
+  
+  <!-- Execution Agent -->
+  <g filter="url(#shadow)">
+    <rect x="500" y="560" width="160" height="120" rx="12" fill="url(#agentGrad)"/>
+    <text x="580" y="595" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Execution
+    </text>
+    <text x="580" y="620" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Agent
+    </text>
+    <text x="580" y="645" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Run Tests
+    </text>
+    <text x="580" y="665" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Capture Results
+    </text>
+  </g>
+  
+  <!-- Analysis Agent -->
+  <g filter="url(#shadow)">
+    <rect x="690" y="560" width="160" height="120" rx="12" fill="url(#agentGrad)"/>
+    <text x="770" y="595" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Analysis
+    </text>
+    <text x="770" y="620" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Agent
+    </text>
+    <text x="770" y="645" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Visual Diff
+    </text>
+    <text x="770" y="665" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      DOM Compare
+    </text>
+  </g>
+  
+  <!-- Remediation Agent -->
+  <g filter="url(#shadow)">
+    <rect x="880" y="560" width="160" height="120" rx="12" fill="url(#agentGrad)"/>
+    <text x="960" y="595" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Remediation
+    </text>
+    <text x="960" y="620" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Agent
+    </text>
+    <text x="960" y="645" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Propose Fixes
+    </text>
+    <text x="960" y="665" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Issue Detection
+    </text>
+  </g>
+  
+  <!-- Implementation Agent -->
+  <g filter="url(#shadow)">
+    <rect x="930" y="720" width="160" height="120" rx="12" fill="url(#agentGrad)"/>
+    <text x="1010" y="755" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Implementation
+    </text>
+    <text x="1010" y="780" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Agent
+    </text>
+    <text x="1010" y="805" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Apply Changes
+    </text>
+    <text x="1010" y="825" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Code Updates
+    </text>
+  </g>
+  
+  <!-- Review Agent -->
+  <g filter="url(#shadow)">
+    <rect x="1120" y="560" width="160" height="120" rx="12" fill="url(#agentGrad)"/>
+    <text x="1200" y="595" font-family="'Segoe UI', Arial, sans-serif" font-size="18" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Review
+    </text>
+    <text x="1200" y="620" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#0f0f23" text-anchor="middle">
+      Agent
+    </text>
+    <text x="1200" y="645" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      User Approval
+    </text>
+    <text x="1200" y="665" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#1a1a2e" text-anchor="middle">
+      Quality Check
+    </text>
+  </g>
+  
+  <!-- Workflow arrows between agents -->
+  <path d="M 280 620 L 310 620" stroke="#f5576c" stroke-width="2" fill="none" stroke-dasharray="5,5" opacity="0.6"/>
+  <path d="M 470 620 L 500 620" stroke="#f5576c" stroke-width="2" fill="none" stroke-dasharray="5,5" opacity="0.6"/>
+  <path d="M 660 620 L 690 620" stroke="#f5576c" stroke-width="2" fill="none" stroke-dasharray="5,5" opacity="0.6"/>
+  <path d="M 850 620 L 880 620" stroke="#f5576c" stroke-width="2" fill="none" stroke-dasharray="5,5" opacity="0.6"/>
+  <path d="M 1040 620 L 1120 620" stroke="#f5576c" stroke-width="2" fill="none" stroke-dasharray="5,5" opacity="0.6"/>
+  <path d="M 960 680 L 1010 720" stroke="#f5576c" stroke-width="2" fill="none" stroke-dasharray="5,5" opacity="0.6"/>
+  
+  <!-- Legend -->
+  <g>
+    <rect x="100" y="760" width="250" height="90" rx="10" fill="#16213e" stroke="#667eea" stroke-width="1.5" opacity="0.9"/>
+    <text x="225" y="785" font-family="'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#667eea" text-anchor="middle">
+      WORKFLOW
+    </text>
+    <line x1="120" y1="805" x2="160" y2="805" stroke="#43e97b" stroke-width="2.5"/>
+    <text x="170" y="810" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#e0e0e0">
+      Control Flow
+    </text>
+    <line x1="120" y1="830" x2="160" y2="830" stroke="#f5576c" stroke-width="2" stroke-dasharray="5,5"/>
+    <text x="170" y="835" font-family="'Segoe UI', Arial, sans-serif" font-size="13" fill="#e0e0e0">
+      Data Flow
+    </text>
+  </g>
+  
+  <!-- Decorative elements -->
+  <circle cx="80" cy="80" r="5" fill="#4facfe" opacity="0.6" filter="url(#glow)"/>
+  <circle cx="1320" cy="80" r="5" fill="#4facfe" opacity="0.6" filter="url(#glow)"/>
+  <circle cx="80" cy="840" r="5" fill="#43e97b" opacity="0.6" filter="url(#glow)"/>
+  <circle cx="1320" cy="840" r="5" fill="#43e97b" opacity="0.6" filter="url(#glow)"/>
+</svg>()
+
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
