@@ -107,9 +107,29 @@ export class ExecutionAgent extends BaseAgent {
       webkit,
     };
 
-    return await browsers[browserType].launch({
-      headless: true,
-    });
+    try {
+      return await browsers[browserType].launch({
+        headless: true,
+      });
+    } catch (error: any) {
+      // Check if error is due to missing Playwright browsers
+      if (error.message && error.message.includes("Executable doesn't exist")) {
+        const betterError = new Error(
+          `Playwright browsers are not installed.\n\n` +
+          `Please run one of the following commands:\n\n` +
+          `  1. From PixelDust directory:\n` +
+          `     cd ${process.cwd()}\n` +
+          `     npx playwright install\n\n` +
+          `  2. Or install all browsers:\n` +
+          `     npx playwright install chromium firefox webkit\n\n` +
+          `  3. Or just the one you need:\n` +
+          `     npx playwright install ${browserType}\n\n` +
+          `Original error: ${error.message}`
+        );
+        throw betterError;
+      }
+      throw error;
+    }
   }
 
   private async runTest(

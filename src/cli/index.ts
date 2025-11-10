@@ -67,6 +67,7 @@ program
   .description('Run UI version testing')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-v, --versions <versions>', 'Comma-separated list of versions to test')
+  .option('--skip-browser-check', 'Skip Playwright browser installation check')
   .action(async (options) => {
     const spinner = ora('Loading configuration').start();
 
@@ -74,6 +75,24 @@ program
       // Load configuration
       const configLoader = new ConfigLoader();
       const config: Config = await configLoader.load(options.config);
+
+      // Check if Playwright browsers are installed (unless skipped)
+      if (!options.skipBrowserCheck) {
+        spinner.text = 'Checking Playwright browsers';
+        const browsersInstalled = await checkPlaywrightBrowsers(config.testing.browsers);
+        if (!browsersInstalled) {
+          spinner.fail('Playwright browsers not found');
+          console.log('\n⚠️  Playwright browsers are not installed.\n');
+          console.log('Please run one of the following commands:\n');
+          console.log('  1. Install Chromium only (recommended):');
+          console.log('     npx playwright install chromium\n');
+          console.log('  2. Install all browsers:');
+          console.log('     npx playwright install\n');
+          console.log('  3. Skip this check (not recommended):');
+          console.log('     pixeldust test --skip-browser-check\n');
+          process.exit(1);
+        }
+      }
 
       // Override versions if provided
       if (options.versions) {
@@ -244,6 +263,47 @@ program
       process.exit(1);
     }
   });
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+async function checkPlaywrightBrowsers(browsers: string[]): Promise<boolean> {
+  try {
+    const { chromium, firefox, webkit } = await import('playwright');
+    const browserMap: Record<string, any> = { chromium, firefox, webkit };
+
+    // Try to get browser paths for each required browser
+    for (const browser of browsers) {
+      if (!browserMap[browser]) {
+        logger.warn(`Unknown browser type: ${browser}`);
+        continue;
+      }
+
+      try {
+        // Try to get the executable path - this will throw if browser is not installed
+        const executablePath = browserMap[browser].executablePath();
+        if (!executablePath) {
+          return false;
+        }
+
+        // Check if the executable actually exists
+        try {
+          await fs.access(executablePath);
+        } catch {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    return true;
+  } catch (error) {
+    logger.error('Failed to check Playwright browsers', error as Error);
+    return false;
+  }
+}
 
 // ============================================================================
 // State Machine Execution
