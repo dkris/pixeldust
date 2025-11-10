@@ -32,7 +32,7 @@ program
     const spinner = ora('Initializing PixelDust configuration').start();
 
     try {
-      const configPath = path.join(process.cwd(), 'pixeldust.config.json');
+      const configPath = path.join(process.cwd(), '.pixeldustrc.json');
 
       // Check if config already exists
       try {
@@ -47,9 +47,9 @@ program
       const defaultConfig = ConfigLoader.getDefaultConfig();
       await fs.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
 
-      spinner.succeed('Configuration file created: pixeldust.config.json');
+      spinner.succeed('Configuration file created: .pixeldustrc.json');
       console.log('\nNext steps:');
-      console.log('  1. Edit pixeldust.config.json to customize your setup');
+      console.log('  1. Edit .pixeldustrc.json to customize your setup');
       console.log('  2. Run "pixeldust test" to start testing');
     } catch (error) {
       spinner.fail('Failed to initialize configuration');

@@ -388,7 +388,7 @@ interface EnhancedConfig extends Config {
 pixeldust init --app ./my-ui5-app
 
 # 2. Configure
-cat > pixeldust.config.json <<EOF
+cat > .pixeldustrc.json <<EOF
 {
   "application": {
     "path": "./my-ui5-app",

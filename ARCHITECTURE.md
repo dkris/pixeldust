@@ -347,7 +347,7 @@ interface Config {
 pixeldust init
 
 # Run version comparison
-pixeldust test --config pixeldust.config.json
+pixeldust test --config .pixeldustrc.json
 
 # Run with specific versions
 pixeldust test --versions 1.0.0,2.0.0,3.0.0

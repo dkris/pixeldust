@@ -15,7 +15,7 @@
 
 ### 1. Add Application Config
 
-Update your `pixeldust.config.json`:
+Update your `.pixeldustrc.json`:
 
 ```json
 {
@@ -40,7 +40,7 @@ Update your `pixeldust.config.json`:
 ### 2. Run PixelDust
 
 ```bash
-pixeldust test --config pixeldust.config.json
+pixeldust test --config .pixeldustrc.json
 ```
 
 ### 3. System Will Automatically:
@@ -117,7 +117,7 @@ pixeldust test --config pixeldust.config.json
 
 ```bash
 # 1. Create config
-cat > pixeldust.config.json <<EOF
+cat > .pixeldustrc.json <<EOF
 {
   "framework": {
     "name": "ui5-webcomponents",

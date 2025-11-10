@@ -29,11 +29,11 @@ Initialize PixelDust configuration:
 pixeldust init
 ```
 
-This creates `pixeldust.config.json`.
+This creates `.pixeldustrc.json`.
 
 ## Step 2: Configure Your Test
 
-Edit `pixeldust.config.json`:
+Edit `.pixeldustrc.json`:
 
 ```json
 {
@@ -171,7 +171,7 @@ Here's a complete example testing UI5 components:
 pixeldust init
 
 # 2. Edit config to test specific components
-cat > pixeldust.config.json << 'EOF'
+cat > .pixeldustrc.json << 'EOF'
 {
   "framework": {
     "name": "ui5-webcomponents",

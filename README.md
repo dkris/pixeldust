@@ -139,11 +139,11 @@ npm install --save-dev @pixeldust/ui-version-tester
 pixeldust init
 ```
 
-This creates a `pixeldust.config.json` file in your project root.
+This creates a `.pixeldustrc.json` file in your project root.
 
 ### 2. Configure Your Test
 
-Edit `pixeldust.config.json`:
+Edit `.pixeldustrc.json`:
 
 ```json
 {
@@ -380,7 +380,7 @@ User reviews final results and signs off on the migration.
 pixeldust init
 
 # Edit config to test UI5 1.x → 2.x
-vim pixeldust.config.json
+vim .pixeldustrc.json
 
 # Run test
 pixeldust test

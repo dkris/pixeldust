@@ -288,7 +288,7 @@ Full application support is production-ready. Get started:
 ### Option 1: Quick Start (Recommended)
 1. Install PixelDust (see [QUICKSTART.md](./QUICKSTART.md))
 2. Create config with `application` section
-3. Run `pixeldust test --config pixeldust.config.json`
+3. Run `pixeldust test --config .pixeldustrc.json`
 4. Review and approve fixes
 5. Done! Your app is migrated.
 

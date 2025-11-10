@@ -62,7 +62,7 @@ Socket location: `/run/podman/podman.sock`
 
 ### 3. Configure PixelDust
 
-In your `pixeldust.config.json`, set the runtime to `podman`:
+In your `.pixeldustrc.json`, set the runtime to `podman`:
 
 ```json
 {
@@ -418,7 +418,7 @@ jobs:
         run: npm install -g @pixeldust/ui-version-tester
 
       - name: Run Tests
-        run: pixeldust test --config pixeldust.config.json
+        run: pixeldust test --config .pixeldustrc.json
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
