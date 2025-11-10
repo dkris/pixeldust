@@ -233,6 +233,101 @@ program
   });
 
 // ============================================================================
+// Show Tests Command
+// ============================================================================
+
+program
+  .command('show-tests <session-id>')
+  .description('Show generated Playwright tests')
+  .option('-c, --component <component>', 'Filter by component name')
+  .option('-e, --export <path>', 'Export tests to directory')
+  .action(async (sessionId, options) => {
+    try {
+      const db = new DatabaseManager();
+      const session = db.getSession(sessionId);
+
+      if (!session) {
+        console.error(`Session ${sessionId} not found`);
+        return;
+      }
+
+      const testSuites = db.getTestSuites(sessionId);
+
+      if (testSuites.length === 0) {
+        console.log('No tests found for this session.');
+        console.log('Tests are generated during the TEST_GENERATION phase.');
+        return;
+      }
+
+      // Filter by component if specified
+      const filteredSuites = options.component
+        ? testSuites.filter(s => s.component === options.component)
+        : testSuites;
+
+      if (filteredSuites.length === 0) {
+        console.log(`No tests found for component: ${options.component}`);
+        return;
+      }
+
+      // Export to files if path specified
+      if (options.export) {
+        const exportPath = path.resolve(options.export);
+        await fs.mkdir(exportPath, { recursive: true });
+
+        for (const suite of filteredSuites) {
+          const componentDir = path.join(exportPath, suite.component);
+          await fs.mkdir(componentDir, { recursive: true });
+
+          for (let i = 0; i < suite.tests.length; i++) {
+            const test = suite.tests[i];
+            const filename = `${test.category.toLowerCase()}-${i + 1}.spec.ts`;
+            const filepath = path.join(componentDir, filename);
+
+            const content = `// ${test.name}
+// ${test.description}
+// Generated at: ${suite.generatedAt}
+
+${test.code}
+`;
+
+            await fs.writeFile(filepath, content);
+          }
+
+          console.log(`✓ Exported ${suite.tests.length} tests for ${suite.component} to ${componentDir}`);
+        }
+
+        console.log(`\nAll tests exported to: ${exportPath}`);
+      } else {
+        // Display to console
+        console.log(`\nGenerated Tests for Session: ${sessionId}\n`);
+        console.log('='.repeat(80) + '\n');
+
+        for (const suite of filteredSuites) {
+          console.log(`Component: ${suite.component}`);
+          console.log(`Generated: ${suite.generatedAt}`);
+          console.log(`Tests: ${suite.tests.length}\n`);
+
+          for (let i = 0; i < suite.tests.length; i++) {
+            const test = suite.tests[i];
+            console.log(`  ${i + 1}. ${test.name} [${test.category}]`);
+            console.log(`     ${test.description}\n`);
+          }
+
+          console.log('-'.repeat(80) + '\n');
+        }
+
+        console.log(`\nTo export these tests to files, run:`);
+        console.log(`  pixeldust show-tests ${sessionId} --export ./playwright-tests\n`);
+      }
+
+      db.close();
+    } catch (error) {
+      logger.error('Show tests command failed', error as Error);
+      process.exit(1);
+    }
+  });
+
+// ============================================================================
 // Approve Command
 // ============================================================================
 

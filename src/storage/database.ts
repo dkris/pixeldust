@@ -77,6 +77,19 @@ export class DatabaseManager {
       )
     `);
 
+    // Create test_suites table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS test_suites (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        component TEXT NOT NULL,
+        tests TEXT NOT NULL,
+        generated_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id)
+      )
+    `);
+
     // Create indices
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
@@ -84,6 +97,8 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_comparisons_session ON comparisons(session_id);
       CREATE INDEX IF NOT EXISTS idx_remediations_session ON remediations(session_id);
       CREATE INDEX IF NOT EXISTS idx_remediations_status ON remediations(status);
+      CREATE INDEX IF NOT EXISTS idx_test_suites_session ON test_suites(session_id);
+      CREATE INDEX IF NOT EXISTS idx_test_suites_component ON test_suites(component);
     `);
   }
 
@@ -301,6 +316,60 @@ export class DatabaseManager {
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     }));
+  }
+
+  // ============================================================================
+  // Test Suite Operations
+  // ============================================================================
+
+  saveTestSuite(testSuite: any): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO test_suites (id, session_id, version, component, tests, generated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      testSuite.id,
+      testSuite.sessionId,
+      testSuite.version,
+      testSuite.component,
+      JSON.stringify(testSuite.tests),
+      testSuite.generatedAt.getTime()
+    );
+  }
+
+  getTestSuites(sessionId: string): any[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM test_suites WHERE session_id = ? ORDER BY component
+    `);
+    const rows = stmt.all(sessionId) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      sessionId: row.session_id,
+      version: row.version,
+      component: row.component,
+      tests: JSON.parse(row.tests),
+      generatedAt: new Date(row.generated_at),
+    }));
+  }
+
+  getTestSuiteByComponent(sessionId: string, component: string): any | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM test_suites WHERE session_id = ? AND component = ?
+    `);
+    const row = stmt.get(sessionId, component) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      version: row.version,
+      component: row.component,
+      tests: JSON.parse(row.tests),
+      generatedAt: new Date(row.generated_at),
+    };
   }
 
   close(): void {

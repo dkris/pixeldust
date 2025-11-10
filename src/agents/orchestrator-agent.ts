@@ -182,6 +182,14 @@ export class OrchestratorAgent extends BaseAgent {
       return this.failure(result.error!, SessionState.ERROR);
     }
 
+    // Save generated test suites to database
+    if (result.data?.testSuites) {
+      for (const testSuite of result.data.testSuites) {
+        this.db.saveTestSuite(testSuite);
+      }
+      this.logger.info(`Saved ${result.data.testSuites.length} test suites to database`);
+    }
+
     return this.success(
       result.data,
       SessionState.TEST_EXECUTION
