@@ -1,10 +1,13 @@
 import { BaseAgent } from './base-agent';
 import { AgentType, AgentContext, AgentResult, SessionState, Session } from '../types';
 import { DatabaseManager } from '../storage/database';
+import { ApplicationLoaderAgent } from './application-loader-agent';
 import { EnvironmentAgent } from './environment-agent';
 import { TestGenerationAgent } from './test-generation-agent';
 import { ExecutionAgent } from './execution-agent';
 import { AnalysisAgent } from './analysis-agent';
+import { DependencyUpgradeAgent } from './dependency-upgrade-agent';
+import { TestFixingAgent } from './test-fixing-agent';
 import { RemediationAgent } from './remediation-agent';
 import { ImplementationAgent } from './implementation-agent';
 import { ReviewAgent } from './review-agent';
@@ -30,10 +33,13 @@ export class OrchestratorAgent extends BaseAgent {
   }
 
   private initializeAgents() {
+    this.agents.set(AgentType.APPLICATION_LOADER, new ApplicationLoaderAgent());
     this.agents.set(AgentType.ENVIRONMENT, new EnvironmentAgent());
     this.agents.set(AgentType.TEST_GENERATION, new TestGenerationAgent());
     this.agents.set(AgentType.EXECUTION, new ExecutionAgent());
     this.agents.set(AgentType.ANALYSIS, new AnalysisAgent());
+    this.agents.set(AgentType.DEPENDENCY_UPGRADE, new DependencyUpgradeAgent());
+    this.agents.set(AgentType.TEST_FIXING, new TestFixingAgent());
     this.agents.set(AgentType.REMEDIATION, new RemediationAgent());
     this.agents.set(AgentType.IMPLEMENTATION, new ImplementationAgent());
     this.agents.set(AgentType.REVIEW, new ReviewAgent());
@@ -53,6 +59,9 @@ export class OrchestratorAgent extends BaseAgent {
         case SessionState.INITIALIZING:
           return this.handleInitializing(context);
 
+        case SessionState.APPLICATION_LOADING:
+          return this.handleApplicationLoading(context);
+
         case SessionState.ENVIRONMENT_SETUP:
           return this.handleEnvironmentSetup(context);
 
@@ -64,6 +73,12 @@ export class OrchestratorAgent extends BaseAgent {
 
         case SessionState.ANALYSIS:
           return this.handleAnalysis(context);
+
+        case SessionState.DEPENDENCY_UPGRADE:
+          return this.handleDependencyUpgrade(context);
+
+        case SessionState.TEST_FIXING:
+          return this.handleTestFixing(context);
 
         case SessionState.REMEDIATION_PROPOSAL:
           return this.handleRemediationProposal(context);
@@ -112,9 +127,32 @@ export class OrchestratorAgent extends BaseAgent {
     // Create session in database
     this.db.createSession(context.session);
 
+    // Decide next state based on configuration
+    const nextState = config.application
+      ? SessionState.APPLICATION_LOADING
+      : SessionState.ENVIRONMENT_SETUP;
+
+    this.logger.info(`Mode: ${config.application ? 'application' : 'framework-only'}`);
+
     return this.success(
       { message: 'Session initialized successfully' },
-      SessionState.ENVIRONMENT_SETUP
+      nextState
+    );
+  }
+
+  private async handleApplicationLoading(context: AgentContext): Promise<AgentResult> {
+    this.logger.info('Loading application');
+
+    const appLoaderAgent = this.agents.get(AgentType.APPLICATION_LOADER)!;
+    const result = await appLoaderAgent.execute(context);
+
+    if (!result.success) {
+      return this.failure(result.error!, SessionState.ERROR);
+    }
+
+    return this.success(
+      result.data,
+      SessionState.TEST_GENERATION
     );
   }
 
@@ -184,6 +222,45 @@ export class OrchestratorAgent extends BaseAgent {
       );
     }
 
+    // If application mode, proceed to dependency upgrade
+    const nextState = context.config.application
+      ? SessionState.DEPENDENCY_UPGRADE
+      : SessionState.REMEDIATION_PROPOSAL;
+
+    return this.success(
+      result.data,
+      nextState
+    );
+  }
+
+  private async handleDependencyUpgrade(context: AgentContext): Promise<AgentResult> {
+    this.logger.info('Upgrading dependencies');
+
+    const depUpgradeAgent = this.agents.get(AgentType.DEPENDENCY_UPGRADE)!;
+    const result = await depUpgradeAgent.execute(context);
+
+    if (!result.success) {
+      return this.failure(result.error!, SessionState.ERROR);
+    }
+
+    return this.success(
+      result.data,
+      SessionState.TEST_FIXING
+    );
+  }
+
+  private async handleTestFixing(context: AgentContext): Promise<AgentResult> {
+    this.logger.info('Fixing broken tests');
+
+    const testFixingAgent = this.agents.get(AgentType.TEST_FIXING)!;
+    const result = await testFixingAgent.execute(context);
+
+    if (!result.success) {
+      return this.failure(result.error!, SessionState.ERROR);
+    }
+
+    // If all tests pass, go to remediation proposal
+    // Otherwise, may need another iteration
     return this.success(
       result.data,
       SessionState.REMEDIATION_PROPOSAL

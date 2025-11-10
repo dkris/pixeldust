@@ -65,6 +65,25 @@ const ConfigSchema = z.object({
     format: z.array(z.enum(['markdown', 'html', 'json'])),
     outputPath: z.string(),
   }),
+  application: z.object({
+    path: z.string(),
+    entryPoint: z.string().optional(),
+    buildCommand: z.string(),
+    startCommand: z.string(),
+    testCommand: z.string().optional(),
+    port: z.number(),
+    testPaths: z.array(z.string()).optional(),
+    sourcePaths: z.array(z.string()).optional(),
+    packageJson: z.string().optional(),
+  }).optional(),
+  upgrade: z.object({
+    updatePeerDependencies: z.boolean().default(true),
+    resolveConflicts: z.enum(['auto', 'manual']).optional(),
+    fixTests: z.boolean().default(true),
+    testTimeout: z.number().optional(),
+    incremental: z.boolean().optional(),
+    createBranches: z.boolean().optional(),
+  }).optional(),
 });
 
 /**

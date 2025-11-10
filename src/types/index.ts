@@ -15,6 +15,8 @@ export interface Config {
   ai: AIConfig;
   storage: StorageConfig;
   reporting: ReportingConfig;
+  application?: ApplicationConfig;
+  upgrade?: UpgradeConfig;
 }
 
 export interface FrameworkConfig {
@@ -84,6 +86,27 @@ export interface ReportingConfig {
   outputPath: string;
 }
 
+export interface ApplicationConfig {
+  path: string;
+  entryPoint?: string;
+  buildCommand: string;
+  startCommand: string;
+  testCommand?: string;
+  port: number;
+  testPaths?: string[];
+  sourcePaths?: string[];
+  packageJson?: string;
+}
+
+export interface UpgradeConfig {
+  updatePeerDependencies: boolean;
+  resolveConflicts?: 'auto' | 'manual';
+  fixTests: boolean;
+  testTimeout?: number;
+  incremental?: boolean;
+  createBranches?: boolean;
+}
+
 // ============================================================================
 // State Machine Types
 // ============================================================================
@@ -91,10 +114,13 @@ export interface ReportingConfig {
 export enum SessionState {
   IDLE = 'IDLE',
   INITIALIZING = 'INITIALIZING',
+  APPLICATION_LOADING = 'APPLICATION_LOADING',
   ENVIRONMENT_SETUP = 'ENVIRONMENT_SETUP',
   TEST_GENERATION = 'TEST_GENERATION',
   TEST_EXECUTION = 'TEST_EXECUTION',
   ANALYSIS = 'ANALYSIS',
+  DEPENDENCY_UPGRADE = 'DEPENDENCY_UPGRADE',
+  TEST_FIXING = 'TEST_FIXING',
   REMEDIATION_PROPOSAL = 'REMEDIATION_PROPOSAL',
   AWAITING_APPROVAL = 'AWAITING_APPROVAL',
   IMPLEMENTING = 'IMPLEMENTING',
@@ -119,10 +145,13 @@ export interface Session {
 
 export enum AgentType {
   ORCHESTRATOR = 'ORCHESTRATOR',
+  APPLICATION_LOADER = 'APPLICATION_LOADER',
   ENVIRONMENT = 'ENVIRONMENT',
   TEST_GENERATION = 'TEST_GENERATION',
   EXECUTION = 'EXECUTION',
   ANALYSIS = 'ANALYSIS',
+  DEPENDENCY_UPGRADE = 'DEPENDENCY_UPGRADE',
+  TEST_FIXING = 'TEST_FIXING',
   REMEDIATION = 'REMEDIATION',
   IMPLEMENTATION = 'IMPLEMENTATION',
   REVIEW = 'REVIEW',

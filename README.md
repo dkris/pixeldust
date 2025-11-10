@@ -18,49 +18,41 @@ PixelDust is an AI-powered testing system that automatically:
 
 **🚀 Native Podman Support:** Full rootless and rootful Podman support with automatic socket detection. See [PODMAN.md](./PODMAN.md) for details.
 
-## Current Capabilities & Limitations
+## Capabilities
 
-### ✅ What PixelDust Does (v0.1.0)
+### 🎯 Two Modes of Operation
 
-PixelDust currently excels at **framework-level comparison and evaluation**:
+**1. Framework-Only Mode** (Quick evaluation)
+- Tests UI framework components in isolation
+- Fast comparison between versions
+- Ideal for evaluating upgrades before starting
 
-- **Framework Testing in Isolation**: Tests UI framework components across different versions
-- **Breaking Change Detection**: Identifies visual, DOM, and API differences between versions
-- **AI-Powered Analysis**: Generates comprehensive test suites and migration recommendations
-- **Visual Regression**: Pixel-perfect comparison with detailed diff reports
-- **Automated Remediation Proposals**: AI suggests code changes to handle breaking changes
+**2. Application Mode** (Full automated migration) ⭐ NEW
+- Tests YOUR actual application code
+- Automatically upgrades dependencies
+- AI-powered test fixing
+- Complete end-to-end migration
 
-**Best For:**
-- Evaluating framework upgrades before committing
-- Understanding breaking changes between versions
-- Getting AI-generated migration strategies
-- Visual regression testing of UI components
+### ✅ What PixelDust Does (v0.2.0)
 
-### ⚠️ Current Limitations
+**Core Features:**
+- ✅ **Application Integration**: Mount and test your real application code
+- ✅ **Automatic Dependency Upgrade**: Updates package.json and resolves peer dependencies
+- ✅ **AI-Powered Test Fixing**: Automatically fixes broken tests after framework upgrades
+- ✅ **Breaking Change Detection**: Visual, DOM, API, and performance differences
+- ✅ **Intelligent Remediation**: AI proposes code fixes with confidence scores
+- ✅ **Visual Regression**: Pixel-perfect comparison with detailed diffs
+- ✅ **Multi-Agent System**: 11 specialized agents working together
+- ✅ **Native Podman Support**: Rootless containers for enhanced security
 
-PixelDust does **NOT** currently:
-
-- ❌ Test your actual application code
-- ❌ Automatically upgrade dependencies in your package.json
-- ❌ Fix your existing unit/integration tests after upgrades
-- ❌ Handle complex application-specific migration scenarios
-
-**Current workflow:**
-1. PixelDust tests framework versions in isolation
-2. You review the breaking changes and AI suggestions
-3. You manually apply fixes to your application
-4. You run your own test suite
-
-### 🚧 Planned Enhancements
-
-We're actively working on full application integration. See [ENHANCEMENT_PLAN.md](./ENHANCEMENT_PLAN.md) for:
-
-- **Application Code Integration** - Test your real app with different versions
-- **Dependency Upgrade Agent** - Automatically update package.json
-- **Test Fixing Agent** - Auto-fix broken tests after upgrades
-- **End-to-End Migration** - Complete automated upgrade workflow
-
-**Want these features?** See [APPLICATION_INTEGRATION.md](./APPLICATION_INTEGRATION.md) for workarounds and how to contribute.
+**Complete Workflow:**
+1. 📦 Load your application into containers
+2. 🔄 Test with multiple framework versions
+3. 🔍 Analyze differences (visual + functional)
+4. ⬆️  Upgrade dependencies automatically
+5. 🔧 Fix broken tests with AI
+6. ✅ Verify everything works
+7. 📊 Generate comprehensive reports
 
 ## Architecture
 
@@ -497,19 +489,29 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 ## Roadmap
 
-- [x] Core multi-agent architecture
+### v0.2.0 (Current) ✅
+- [x] Core multi-agent architecture (11 agents)
 - [x] UI5 web components support
-- [x] Docker/Podman integration
+- [x] Docker/Podman native integration
 - [x] Visual regression testing
 - [x] AI-powered remediation
+- [x] **Application integration** (ApplicationLoaderAgent)
+- [x] **Automatic dependency upgrades** (DependencyUpgradeAgent)
+- [x] **AI-powered test fixing** (TestFixingAgent)
+- [x] **Full automated migration workflow**
+
+### v0.3.0 (Planned)
 - [ ] VS Code extension
 - [ ] Cursor extension
 - [ ] React support
 - [ ] Vue support
 - [ ] Angular support
+
+### v0.4.0 (Future)
 - [ ] Cloud deployment options
 - [ ] Real browser testing (BrowserStack)
 - [ ] Collaborative features
+- [ ] CI/CD deep integration
 
 ## Acknowledgments
 

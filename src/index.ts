@@ -6,10 +6,13 @@
 
 // Core exports
 export { OrchestratorAgent } from './agents/orchestrator-agent';
+export { ApplicationLoaderAgent } from './agents/application-loader-agent';
 export { EnvironmentAgent } from './agents/environment-agent';
 export { TestGenerationAgent } from './agents/test-generation-agent';
 export { ExecutionAgent } from './agents/execution-agent';
 export { AnalysisAgent } from './agents/analysis-agent';
+export { DependencyUpgradeAgent } from './agents/dependency-upgrade-agent';
+export { TestFixingAgent } from './agents/test-fixing-agent';
 export { RemediationAgent } from './agents/remediation-agent';
 export { ImplementationAgent } from './agents/implementation-agent';
 export { ReviewAgent } from './agents/review-agent';
