@@ -63,8 +63,42 @@ export class TestGenerationAgent extends BaseAgent {
   }
 
   private async discoverComponents(config: any): Promise<string[]> {
-    // For UI5 web components, we can use a predefined list or discovery
-    const ui5Components = [
+    let components: string[] = [];
+
+    // Priority 1: Use explicitly included components if specified
+    if (config.components?.include && config.components.include.length > 0) {
+      this.logger.info('Using explicitly included components');
+      components = config.components.include;
+    }
+    // Priority 2: Auto-detect from application code if available
+    else if (config.application?.path) {
+      this.logger.info('Auto-detecting components from application code');
+      components = await this.scanApplicationForComponents(config.application.path, config.framework.name);
+
+      if (components.length === 0) {
+        this.logger.warn('No components detected in application, falling back to default list');
+        components = this.getDefaultComponents();
+      }
+    }
+    // Priority 3: Use default component list
+    else {
+      this.logger.info('Using default component list');
+      components = this.getDefaultComponents();
+    }
+
+    // Apply exclusions
+    if (config.components?.exclude && config.components.exclude.length > 0) {
+      this.logger.info(`Excluding components: ${config.components.exclude.join(', ')}`);
+      components = components.filter(c => !config.components.exclude.includes(c));
+    }
+
+    this.logger.info(`Testing ${components.length} components: ${components.join(', ')}`);
+    return components;
+  }
+
+  private getDefaultComponents(): string[] {
+    // Default UI5 web components for framework-only testing
+    return [
       'ui5-button',
       'ui5-input',
       'ui5-card',
@@ -74,18 +108,129 @@ export class TestGenerationAgent extends BaseAgent {
       'ui5-select',
       'ui5-checkbox',
     ];
+  }
 
-    let components = ui5Components;
+  private async scanApplicationForComponents(appPath: string, frameworkName: string): Promise<string[]> {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const components = new Set<string>();
 
-    if (config.components.include && config.components.include.length > 0) {
-      components = components.filter(c => config.components.include.includes(c));
+    try {
+      // Determine component prefix based on framework
+      const componentPrefix = this.getComponentPrefix(frameworkName);
+
+      // Patterns to search for based on file type
+      const patterns = [
+        // HTML/JSX/TSX: <ui5-button>, <ui5-table>
+        new RegExp(`<(${componentPrefix}-[a-z0-9-]+)`, 'gi'),
+        // JavaScript/TypeScript imports: import "@ui5/webcomponents/dist/Button.js"
+        new RegExp(`import.*["']@ui5/webcomponents(?:-[a-z]+)?/dist/([A-Z][a-zA-Z]+)\\.js["']`, 'gi'),
+      ];
+
+      // File extensions to scan
+      const extensions = ['.html', '.js', '.ts', '.jsx', '.tsx', '.vue', '.svelte'];
+
+      // Recursively scan application directory
+      await this.scanDirectory(appPath, extensions, patterns, components, componentPrefix);
+
+      this.logger.info(`Detected ${components.size} unique components in application`);
+      return Array.from(components).sort();
+    } catch (error) {
+      this.logger.error('Failed to scan application for components', error as Error);
+      return [];
     }
+  }
 
-    if (config.components.exclude && config.components.exclude.length > 0) {
-      components = components.filter(c => !config.components.exclude.includes(c));
+  private async scanDirectory(
+    dir: string,
+    extensions: string[],
+    patterns: RegExp[],
+    components: Set<string>,
+    prefix: string
+  ): Promise<void> {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+
+        // Skip common directories to ignore
+        if (entry.isDirectory()) {
+          const skipDirs = ['node_modules', 'dist', 'build', '.git', 'coverage', 'public'];
+          if (skipDirs.includes(entry.name)) {
+            continue;
+          }
+          await this.scanDirectory(fullPath, extensions, patterns, components, prefix);
+        } else if (entry.isFile()) {
+          // Check if file has relevant extension
+          const ext = path.extname(entry.name);
+          if (extensions.includes(ext)) {
+            await this.scanFile(fullPath, patterns, components, prefix);
+          }
+        }
+      }
+    } catch (error) {
+      // Silently skip directories we can't read
+      this.logger.debug(`Skipped directory: ${dir}`);
     }
+  }
 
-    return components;
+  private async scanFile(
+    filePath: string,
+    patterns: RegExp[],
+    components: Set<string>,
+    prefix: string
+  ): Promise<void> {
+    const fs = await import('fs/promises');
+
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+
+      for (const pattern of patterns) {
+        let match;
+        // Reset regex lastIndex
+        pattern.lastIndex = 0;
+
+        while ((match = pattern.exec(content)) !== null) {
+          if (match[1]) {
+            // Convert component name to tag format
+            let componentName = match[1];
+
+            // If it's a PascalCase import (e.g., "Button"), convert to tag format
+            if (/^[A-Z]/.test(componentName)) {
+              componentName = `${prefix}-${componentName.toLowerCase()}`;
+            }
+
+            // Normalize to lowercase
+            componentName = componentName.toLowerCase();
+
+            // Only add if it matches the framework prefix
+            if (componentName.startsWith(prefix)) {
+              components.add(componentName);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      // Silently skip files we can't read
+      this.logger.debug(`Skipped file: ${filePath}`);
+    }
+  }
+
+  private getComponentPrefix(frameworkName: string): string {
+    // Map framework names to component tag prefixes
+    const prefixMap: Record<string, string> = {
+      '@ui5/webcomponents': 'ui5',
+      'ui5-webcomponents': 'ui5',
+      '@fluentui/web-components': 'fluent',
+      '@shoelace-style/shoelace': 'sl',
+      '@material/web': 'md',
+    };
+
+    return prefixMap[frameworkName] || 'ui5';
   }
 
   private async generateTestsForComponent(component: string, config: any): Promise<Test[]> {
