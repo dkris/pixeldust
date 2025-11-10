@@ -249,23 +249,27 @@ For each test, provide:
 
 The component will be tested across multiple versions, so focus on core functionality that should remain consistent.
 
-Return the tests as a JSON array with this structure:
+IMPORTANT: Return ONLY a valid JSON array. Escape all special characters in the code strings. Use \\n for newlines, \\" for quotes.
+
+Return the tests as a JSON array with this exact structure:
 [
   {
     "name": "test name",
     "description": "what this test does",
-    "category": "FUNCTIONAL|VISUAL|ACCESSIBILITY|PERFORMANCE",
-    "code": "playwright test code as string"
+    "category": "FUNCTIONAL",
+    "code": "import { test, expect } from '@playwright/test';\\n\\ntest('test name', async ({ page }) => {\\n  await page.goto('/');\\n  const element = await page.locator('${component}');\\n  await expect(element).toBeVisible();\\n});"
   }
 ]
 
-Focus on creating robust, maintainable tests that can detect breaking changes between versions.`;
+Focus on creating robust, maintainable tests that can detect breaking changes between versions.
+
+Return ONLY the JSON array, no explanation or markdown.`;
 
     try {
       const response = await this.ai.messages.create({
         model: config.ai.model,
-        max_tokens: config.ai.maxTokens || 4096,
-        temperature: config.ai.temperature || 0.7,
+        max_tokens: config.ai.maxTokens || 8192,
+        temperature: 0.3, // Lower temperature for more consistent JSON
         messages: [
           {
             role: 'user',
@@ -279,27 +283,65 @@ Focus on creating robust, maintainable tests that can detect breaking changes be
         throw new Error('Unexpected response type from AI');
       }
 
-      // Parse JSON from response
-      const jsonMatch = content.text.match(/\[[\s\S]*\]/);
+      // Try to extract JSON from response
+      let jsonText = content.text.trim();
+
+      // Remove markdown code blocks if present
+      if (jsonText.startsWith('```')) {
+        const codeBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (codeBlockMatch) {
+          jsonText = codeBlockMatch[1].trim();
+        }
+      }
+
+      // Try to find JSON array in the text
+      const jsonMatch = jsonText.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
+        this.logger.warn(`Could not extract JSON array from AI response for ${component}`);
         throw new Error('Could not extract JSON from AI response');
       }
 
-      const testsData = JSON.parse(jsonMatch[0]);
+      let testsData;
+      try {
+        testsData = JSON.parse(jsonMatch[0]);
+      } catch (parseError: any) {
+        this.logger.error(`JSON parse error for ${component}: ${parseError.message}`);
+        this.logger.debug(`Attempted to parse: ${jsonMatch[0].substring(0, 500)}...`);
+        throw new Error(`Failed to parse JSON: ${parseError.message}`);
+      }
 
-      return testsData.map((t: any) => ({
+      if (!Array.isArray(testsData)) {
+        throw new Error('AI response is not a JSON array');
+      }
+
+      const tests = testsData.map((t: any) => ({
         id: uuidv4(),
-        name: t.name,
-        description: t.description,
-        code: t.code,
-        category: t.category as TestCategory,
+        name: t.name || `${component} test`,
+        description: t.description || 'Test description',
+        code: t.code || this.getDefaultTestCode(component),
+        category: (t.category as TestCategory) || TestCategory.FUNCTIONAL,
       }));
+
+      this.logger.info(`Successfully generated ${tests.length} tests for ${component}`);
+      return tests;
+
     } catch (error) {
       this.logger.error(`Failed to generate tests for ${component}`, error as Error);
+      this.logger.info(`Using fallback tests for ${component}`);
 
       // Fallback: return basic tests
       return this.getDefaultTests(component);
     }
+  }
+
+  private getDefaultTestCode(component: string): string {
+    return `import { test, expect } from '@playwright/test';
+
+test('${component} renders correctly', async ({ page }) => {
+  await page.goto('/');
+  const element = await page.locator('${component}');
+  await expect(element).toBeVisible();
+});`;
   }
 
   private getDefaultTests(component: string): Test[] {
