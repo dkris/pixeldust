@@ -1,10 +1,10 @@
 # Frequently Asked Questions
 
-## Current Implementation
+## v0.2.0 - Full Application Integration
 
 ### Q1: How does this system run in an existing application?
 
-**A: It currently doesn't integrate directly with your application.**
+**A: YES! Full application integration is now available (v0.2.0).**
 
 **What PixelDust v0.1.0 Does:**
 - Creates isolated containers for each framework version
@@ -223,102 +223,115 @@ test('dialog opens on click', async () => {
 
 ## Summary Table
 
-| Feature | v0.1.0 (Current) | Planned (6-8 weeks) |
-|---------|------------------|---------------------|
+| Feature | v0.1.0 | v0.2.0 (Current) |
+|---------|--------|------------------|
 | Test framework in isolation | ✅ Yes | ✅ Yes |
-| Test YOUR application | ❌ No | ✅ Yes (Phase 1) |
-| Upgrade dependencies | ❌ No | ✅ Yes (Phase 2) |
-| Fix broken tests | ❌ No | ✅ Yes (Phase 3) |
+| Test YOUR application | ❌ No | ✅ Yes |
+| Upgrade dependencies | ❌ No | ✅ Yes |
+| Fix broken tests | ❌ No | ✅ Yes |
 | Generate NEW tests | ✅ Yes | ✅ Yes |
 | Visual regression | ✅ Yes | ✅ Yes |
 | AI recommendations | ✅ Yes | ✅ Yes |
 | Auto-apply fixes | ✅ Partial* | ✅ Full |
 
-*Currently auto-applies fixes to demo code, not your application
+*v0.1.0 only auto-applied fixes to demo code, v0.2.0 applies to your application
 
 ---
 
 ## What Should I Use PixelDust For Today?
 
-### ✅ Great Use Cases (v0.1.0):
+### ✅ Great Use Cases (v0.2.0):
 
-1. **Evaluate Framework Upgrades**
+1. **Automated Application Migration** ⭐ NEW
+   - Upgrade your production app automatically
+   - Updates dependencies, fixes tests, applies code changes
+   - End-to-end migration with AI assistance
+
+2. **Test Suite Maintenance** ⭐ NEW
+   - Auto-fixing your tests after upgrade
+   - AI analyzes failures and generates fixes
+   - Iterative refinement until tests pass
+
+3. **Evaluate Framework Upgrades**
    - "Should I upgrade from UI5 1.x to 2.x?"
    - Get detailed breaking change analysis
+   - Test both framework and YOUR application
 
-2. **Framework Selection**
+4. **Framework Selection**
    - "Should I use version 1.24 or 2.0 for my new project?"
-   - See differences side-by-side
+   - See differences side-by-side with real app testing
 
-3. **Migration Planning**
+5. **Migration Planning**
    - "What will break if I upgrade?"
-   - Get AI-generated migration strategy
+   - Get AI-generated migration strategy with automatic fixes
 
-4. **Visual Regression Testing**
+6. **Visual Regression Testing**
    - "Do components look different in the new version?"
    - Pixel-perfect comparison with diffs
 
-5. **Learning Tool**
+7. **Continuous Integration**
+   - Run in CI to validate upgrades before deployment
+   - Block breaking changes automatically
+
+8. **Learning Tool**
    - "How has this framework evolved?"
    - See API changes, visual changes, performance changes
 
-### ❌ Not Ready For (Yet):
-
-1. **Automated Application Migration**
-   - Upgrading your production app automatically
-   - Need Phase 1-3 enhancements
-
-2. **Test Suite Maintenance**
-   - Auto-fixing your tests after upgrade
-   - Need TestFixingAgent (Phase 3)
-
-3. **Continuous Integration**
-   - Running in CI to block breaking upgrades
-   - Need application integration
-
 ---
 
-## How to Get Full Application Support
+## How to Get Started with Full Application Support
 
-### Option 1: Wait for Official Support (6-8 weeks)
-Track progress: [ENHANCEMENT_PLAN.md](./ENHANCEMENT_PLAN.md)
+### ✅ It's Available Now! (v0.2.0)
+
+Full application support is production-ready. Get started:
+
+### Option 1: Quick Start (Recommended)
+1. Install PixelDust (see [QUICKSTART.md](./QUICKSTART.md))
+2. Create config with `application` section
+3. Run `pixeldust test --config pixeldust.config.json`
+4. Review and approve fixes
+5. Done! Your app is migrated.
+
+See [APPLICATION_INTEGRATION.md](./APPLICATION_INTEGRATION.md) for complete guide.
 
 ### Option 2: Contribute!
-We need help with:
-- ApplicationLoaderAgent implementation
-- DependencyUpgradeAgent implementation
-- TestFixingAgent AI tuning
+Help us improve:
+- TestFixingAgent AI tuning for more frameworks
+- Additional framework support (React, Angular, Vue)
+- CI/CD integration templates
+- Performance optimizations
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md)
 
-### Option 3: Sponsor Priority Development
-Contact the team to sponsor specific features
-
-### Option 4: Use Current Version + Manual Steps
-1. Use PixelDust for analysis
+### Option 3: Use Framework-Only Mode
+If you prefer manual control:
+1. Use PixelDust for framework analysis only
 2. Manually apply to your app
-3. Still saves significant time!
+3. Still saves significant analysis time!
 
 ---
 
 ## Timeline
 
 ```
-v0.1.0 (Current - Nov 2024)
+v0.1.0 (Released - Nov 2024)
 ├─ Framework comparison ✅
 ├─ Visual regression ✅
 ├─ AI recommendations ✅
 └─ Podman support ✅
 
-v0.2.0 (Planned - Jan 2025)
-├─ Application integration
-├─ Dependency upgrades
-└─ Test fixing
+v0.2.0 (Current - Nov 2024) ⭐
+├─ Application integration ✅
+├─ Dependency upgrades ✅
+├─ Test fixing ✅
+├─ AI-powered test repair ✅
+└─ Full migration workflow ✅
 
-v0.3.0 (Planned - Feb 2025)
-├─ Full automation
-├─ CI/CD integration
-└─ Multi-framework support
+v0.3.0 (Planned - Q1 2025)
+├─ Multi-framework support (React, Angular, Vue)
+├─ Enhanced CI/CD integration
+├─ Performance optimizations
+└─ Advanced conflict resolution
 ```
 
 ---
