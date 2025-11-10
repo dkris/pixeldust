@@ -221,6 +221,10 @@ export class TestFixingAgent extends BaseAgent {
   ): Promise<TestFix> {
     this.logger.info(`Generating fix for: ${failure.testName}`);
 
+    if (!context.config.application) {
+      throw new Error('Application configuration is required for test fixing');
+    }
+
     // Read test file
     const testCode = await this.readTestFile(failure.filePath, context.config.application.path);
 

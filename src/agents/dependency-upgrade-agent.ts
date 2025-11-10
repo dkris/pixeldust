@@ -264,10 +264,10 @@ export class DependencyUpgradeAgent extends BaseAgent {
       });
 
       if (stderr && !stderr.includes('WARN')) {
-        this.logger.warn('npm install warnings:', stderr);
+        this.logger.warn(`npm install warnings: ${stderr}`);
       }
 
-      this.logger.debug('npm install output:', stdout);
+      this.logger.debug(`npm install output: ${stdout}`);
     } catch (error: any) {
       this.logger.error('npm install failed:', error.message);
       throw new Error(`npm install failed: ${error.message}`);

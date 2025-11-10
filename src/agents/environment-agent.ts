@@ -98,6 +98,10 @@ export class EnvironmentAgent extends BaseAgent {
       // Pull base image if not exists
       await this.pullImage(config.containers.baseImage);
 
+      if (!this.docker) {
+        throw new Error('Docker/Podman client not initialized');
+      }
+
       // Create container
       const dockerContainer = await this.docker.createContainer({
         Image: config.containers.baseImage,
