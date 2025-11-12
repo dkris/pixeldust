@@ -42,7 +42,8 @@ PixelDust is an AI-powered testing system that automatically:
 - ✅ **Breaking Change Detection**: Visual, DOM, API, and performance differences
 - ✅ **Intelligent Remediation**: AI proposes code fixes with confidence scores
 - ✅ **Visual Regression**: Pixel-perfect comparison with detailed diffs
-- ✅ **Multi-Agent System**: 11 specialized agents working together
+- ✅ **Multi-Agent System**: 12 specialized agents working together
+- ✅ **Continuous Improvement**: Evaluation agent provides feedback after each session
 - ✅ **Native Podman Support**: Rootless containers for enhanced security
 
 **Complete Workflow:**
@@ -186,6 +187,9 @@ pixeldust list
 
 # View report
 pixeldust report <session-id>
+
+# View evaluation feedback and recommendations
+pixeldust show-evaluation <session-id>
 
 # Approve a remediation
 pixeldust approve <session-id> <remediation-id>
