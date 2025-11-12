@@ -191,6 +191,9 @@ pixeldust report <session-id>
 # View evaluation feedback and recommendations
 pixeldust show-evaluation <session-id>
 
+# Open interactive diff viewer in browser
+pixeldust show-diff <session-id>
+
 # Approve a remediation
 pixeldust approve <session-id> <remediation-id>
 ```
