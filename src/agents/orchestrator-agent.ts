@@ -11,6 +11,7 @@ import { TestFixingAgent } from './test-fixing-agent';
 import { RemediationAgent } from './remediation-agent';
 import { ImplementationAgent } from './implementation-agent';
 import { ReviewAgent } from './review-agent';
+import { EvaluationAgent } from './evaluation-agent';
 
 /**
  * Orchestrator Agent - Main coordinator for the entire testing lifecycle
@@ -43,6 +44,7 @@ export class OrchestratorAgent extends BaseAgent {
     this.agents.set(AgentType.REMEDIATION, new RemediationAgent());
     this.agents.set(AgentType.IMPLEMENTATION, new ImplementationAgent());
     this.agents.set(AgentType.REVIEW, new ReviewAgent());
+    this.agents.set(AgentType.EVALUATION, new EvaluationAgent(this.db));
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
@@ -91,6 +93,9 @@ export class OrchestratorAgent extends BaseAgent {
 
         case SessionState.REVIEWING:
           return this.handleReviewing(context);
+
+        case SessionState.EVALUATION:
+          return this.handleEvaluation(context);
 
         case SessionState.COMPLETE:
           return this.handleComplete(context);
@@ -222,11 +227,11 @@ export class OrchestratorAgent extends BaseAgent {
       return this.failure(result.error!, SessionState.ERROR);
     }
 
-    // If no differences found, complete the session
+    // If no differences found, proceed to evaluation
     if (result.data.differences.length === 0) {
       return this.success(
         { message: 'No differences found between versions' },
-        SessionState.COMPLETE
+        SessionState.EVALUATION
       );
     }
 
@@ -327,11 +332,11 @@ export class OrchestratorAgent extends BaseAgent {
       return this.failure(result.error!, SessionState.ERROR);
     }
 
-    // If review passes, complete; otherwise, go back to analysis
+    // If review passes, proceed to evaluation; otherwise, go back to analysis
     if (result.data.passed) {
       return this.success(
         result.data,
-        SessionState.COMPLETE
+        SessionState.EVALUATION
       );
     } else {
       return this.success(
@@ -339,6 +344,39 @@ export class OrchestratorAgent extends BaseAgent {
         SessionState.ANALYSIS
       );
     }
+  }
+
+  private async handleEvaluation(context: AgentContext): Promise<AgentResult> {
+    this.logger.info('Evaluating session performance and generating feedback');
+
+    const evaluationAgent = this.agents.get(AgentType.EVALUATION)!;
+    const result = await evaluationAgent.execute(context);
+
+    if (!result.success) {
+      this.logger.warn('Evaluation failed, but continuing to completion');
+      // Even if evaluation fails, we should complete the session
+      return this.success(
+        { message: 'Evaluation failed but session completed' },
+        SessionState.COMPLETE
+      );
+    }
+
+    this.logger.info('Evaluation completed successfully');
+
+    // Log key recommendations
+    if (result.data.evaluation?.feedback?.recommendations) {
+      const highPriorityRecs = result.data.evaluation.feedback.recommendations
+        .filter((r: any) => r.priority === 'high' && r.actionable);
+
+      if (highPriorityRecs.length > 0) {
+        this.logger.info(`Found ${highPriorityRecs.length} high-priority actionable recommendations`);
+      }
+    }
+
+    return this.success(
+      result.data,
+      SessionState.COMPLETE
+    );
   }
 
   private async handleComplete(context: AgentContext): Promise<AgentResult> {

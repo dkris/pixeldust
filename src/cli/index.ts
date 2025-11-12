@@ -360,6 +360,131 @@ program
   });
 
 // ============================================================================
+// Show Evaluation Command
+// ============================================================================
+
+program
+  .command('show-evaluation <session-id>')
+  .description('Show evaluation feedback and recommendations')
+  .action(async (sessionId) => {
+    try {
+      const db = new DatabaseManager();
+      const session = db.getSession(sessionId);
+
+      if (!session) {
+        console.error(`Session ${sessionId} not found`);
+        return;
+      }
+
+      const evaluations = db.getEvaluations(sessionId);
+
+      if (evaluations.length === 0) {
+        console.log('No evaluations found for this session.');
+        console.log('Evaluations are generated after the testing session completes.');
+        return;
+      }
+
+      const latestEval = evaluations[0]; // Already sorted by timestamp DESC
+
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`Evaluation Report for Session: ${sessionId}`);
+      console.log(`Generated: ${latestEval.timestamp.toISOString()}`);
+      console.log(`${'='.repeat(80)}\n`);
+
+      // Overall Score
+      console.log(`Overall Score: ${latestEval.metrics.overallScore.toFixed(2)}/100\n`);
+
+      // Test Quality Metrics
+      console.log('Test Quality:');
+      console.log(`  Total Tests: ${latestEval.metrics.testQuality.totalTests}`);
+      console.log(`  Success Rate: ${(latestEval.metrics.testQuality.successRate * 100).toFixed(2)}%`);
+      console.log(`  Coverage Score: ${latestEval.metrics.testQuality.coverageScore.toFixed(2)}/100`);
+      console.log(`  Avg Duration: ${latestEval.metrics.testQuality.averageTestDuration.toFixed(0)}ms\n`);
+
+      // Comparison Quality Metrics
+      console.log('Comparison Quality:');
+      console.log(`  Total Comparisons: ${latestEval.metrics.comparisonQuality.totalComparisons}`);
+      console.log(`  Detected Differences: ${latestEval.metrics.comparisonQuality.detectedDifferences}`);
+      console.log(`  Precision: ${(latestEval.metrics.comparisonQuality.precision * 100).toFixed(2)}%`);
+      console.log(`  Recall: ${(latestEval.metrics.comparisonQuality.recall * 100).toFixed(2)}%`);
+      console.log(`  Accuracy: ${latestEval.metrics.comparisonQuality.accuracyScore.toFixed(2)}/100\n`);
+
+      // Remediation Effectiveness (if applicable)
+      if (latestEval.metrics.remediationEffectiveness) {
+        console.log('Remediation Effectiveness:');
+        console.log(`  Total Remediations: ${latestEval.metrics.remediationEffectiveness.totalRemediations}`);
+        console.log(`  Success Rate: ${(latestEval.metrics.remediationEffectiveness.successRate * 100).toFixed(2)}%`);
+        console.log(`  Avg Confidence: ${(latestEval.metrics.remediationEffectiveness.averageConfidence * 100).toFixed(2)}%\n`);
+      }
+
+      // Strengths
+      if (latestEval.feedback.strengths.length > 0) {
+        console.log('Strengths:');
+        latestEval.feedback.strengths.forEach((strength: string) => {
+          console.log(`  ✓ ${strength}`);
+        });
+        console.log('');
+      }
+
+      // Weaknesses
+      if (latestEval.feedback.weaknesses.length > 0) {
+        console.log('Weaknesses:');
+        latestEval.feedback.weaknesses.forEach((weakness: string) => {
+          console.log(`  ✗ ${weakness}`);
+        });
+        console.log('');
+      }
+
+      // Recommendations
+      if (latestEval.feedback.recommendations.length > 0) {
+        console.log('Recommendations:');
+        latestEval.feedback.recommendations.forEach((rec: any, index: number) => {
+          const priorityIcon = rec.priority === 'high' ? '🔴' : rec.priority === 'medium' ? '🟡' : '🟢';
+          const actionableIcon = rec.actionable ? '✅' : '❌';
+          console.log(`\n  ${index + 1}. ${priorityIcon} [${rec.priority.toUpperCase()}] ${rec.title}`);
+          console.log(`     Category: ${rec.category}`);
+          console.log(`     Impact: ${rec.estimatedImpact}`);
+          console.log(`     Actionable: ${actionableIcon}`);
+          console.log(`     ${rec.description}`);
+        });
+        console.log('');
+      }
+
+      // Prompt Improvements
+      if (latestEval.feedback.promptImprovements && latestEval.feedback.promptImprovements.length > 0) {
+        console.log('\nPrompt Improvements:');
+        latestEval.feedback.promptImprovements.forEach((improvement: any, index: number) => {
+          console.log(`\n  ${index + 1}. ${improvement.agentType} (Confidence: ${(improvement.confidence * 100).toFixed(0)}%)`);
+          console.log(`     Issue: ${improvement.currentIssue}`);
+          console.log(`     Suggested Change: ${improvement.suggestedChange}`);
+          console.log(`     Expected Improvement: ${improvement.expectedImprovement}`);
+        });
+        console.log('');
+      }
+
+      // Config Suggestions
+      if (latestEval.feedback.configSuggestions && latestEval.feedback.configSuggestions.length > 0) {
+        console.log('\nConfiguration Suggestions:');
+        latestEval.feedback.configSuggestions.forEach((suggestion: any, index: number) => {
+          const impactIcon = suggestion.impact === 'high' ? '🔴' : suggestion.impact === 'medium' ? '🟡' : '🟢';
+          console.log(`\n  ${index + 1}. ${impactIcon} ${suggestion.configPath}`);
+          console.log(`     Current: ${JSON.stringify(suggestion.currentValue)}`);
+          console.log(`     Suggested: ${JSON.stringify(suggestion.suggestedValue)}`);
+          console.log(`     Rationale: ${suggestion.rationale}`);
+        });
+        console.log('');
+      }
+
+      console.log(`${'='.repeat(80)}\n`);
+
+      db.close();
+    } catch (error) {
+      logger.error('Show evaluation command failed', error as Error);
+      process.exit(1);
+    }
+  });
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 

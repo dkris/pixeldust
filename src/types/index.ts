@@ -125,6 +125,7 @@ export enum SessionState {
   AWAITING_APPROVAL = 'AWAITING_APPROVAL',
   IMPLEMENTING = 'IMPLEMENTING',
   REVIEWING = 'REVIEWING',
+  EVALUATION = 'EVALUATION',
   COMPLETE = 'COMPLETE',
   ERROR = 'ERROR',
 }
@@ -155,6 +156,7 @@ export enum AgentType {
   REMEDIATION = 'REMEDIATION',
   IMPLEMENTATION = 'IMPLEMENTATION',
   REVIEW = 'REVIEW',
+  EVALUATION = 'EVALUATION',
 }
 
 export interface Agent {
@@ -425,6 +427,91 @@ export interface ReportSummary {
   lowIssues: number;
   approvedRemediations: number;
   pendingRemediations: number;
+}
+
+// ============================================================================
+// Evaluation Types
+// ============================================================================
+
+export interface Evaluation {
+  id: string;
+  sessionId: string;
+  agentType: AgentType;
+  metrics: EvaluationMetrics;
+  feedback: EvaluationFeedback;
+  timestamp: Date;
+}
+
+export interface EvaluationMetrics {
+  testQuality: TestQualityMetrics;
+  comparisonQuality: ComparisonQualityMetrics;
+  remediationEffectiveness?: RemediationEffectivenessMetrics;
+  overallScore: number; // 0-100
+}
+
+export interface TestQualityMetrics {
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  successRate: number; // 0-1
+  coverageScore: number; // 0-100
+  componentCoverage: Record<string, number>; // component -> coverage percentage
+  categoryDistribution: Record<TestCategory, number>; // category -> test count
+  averageTestDuration: number; // milliseconds
+}
+
+export interface ComparisonQualityMetrics {
+  totalComparisons: number;
+  detectedDifferences: number;
+  falsePositives: number;
+  falseNegatives: number;
+  precision: number; // 0-1
+  recall: number; // 0-1
+  averageSimilarityScore: number; // 0-100
+  accuracyScore: number; // 0-100
+}
+
+export interface RemediationEffectivenessMetrics {
+  totalRemediations: number;
+  approvedRemediations: number;
+  implementedRemediations: number;
+  verifiedRemediations: number;
+  successRate: number; // 0-1
+  averageImplementationTime: number; // milliseconds
+  averageConfidence: number; // 0-1
+}
+
+export interface EvaluationFeedback {
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: Recommendation[];
+  promptImprovements?: PromptImprovement[];
+  configSuggestions?: ConfigSuggestion[];
+}
+
+export interface Recommendation {
+  priority: 'high' | 'medium' | 'low';
+  category: 'test-generation' | 'comparison' | 'remediation' | 'workflow';
+  title: string;
+  description: string;
+  actionable: boolean;
+  estimatedImpact: 'high' | 'medium' | 'low';
+}
+
+export interface PromptImprovement {
+  agentType: AgentType;
+  currentIssue: string;
+  suggestedChange: string;
+  expectedImprovement: string;
+  confidence: number; // 0-1
+}
+
+export interface ConfigSuggestion {
+  configPath: string; // e.g., "testing.timeout"
+  currentValue: any;
+  suggestedValue: any;
+  rationale: string;
+  impact: 'high' | 'medium' | 'low';
 }
 
 // ============================================================================

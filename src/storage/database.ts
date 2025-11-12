@@ -129,6 +129,19 @@ export class DatabaseManager {
       )
     `);
 
+    // Create evaluations table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS evaluations (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        agent_type TEXT NOT NULL,
+        metrics TEXT NOT NULL,
+        feedback TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id)
+      )
+    `);
+
     // Create indices
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
@@ -143,6 +156,8 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_snapshots_version ON snapshots(version);
       CREATE INDEX IF NOT EXISTS idx_snapshot_comparisons_session ON snapshot_comparisons(session_id);
       CREATE INDEX IF NOT EXISTS idx_snapshot_comparisons_component ON snapshot_comparisons(component);
+      CREATE INDEX IF NOT EXISTS idx_evaluations_session ON evaluations(session_id);
+      CREATE INDEX IF NOT EXISTS idx_evaluations_agent_type ON evaluations(agent_type);
     `);
   }
 
@@ -576,6 +591,80 @@ export class DatabaseManager {
       differencesFound: row.differences_found,
       verdict: row.verdict,
       timestamp: row.timestamp,
+    };
+  }
+
+  // ============================================================================
+  // Evaluation Operations
+  // ============================================================================
+
+  saveEvaluation(evaluation: any): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO evaluations (id, session_id, agent_type, metrics, feedback, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      evaluation.id,
+      evaluation.sessionId,
+      evaluation.agentType,
+      JSON.stringify(evaluation.metrics),
+      JSON.stringify(evaluation.feedback),
+      evaluation.timestamp instanceof Date ? evaluation.timestamp.getTime() : evaluation.timestamp
+    );
+  }
+
+  getEvaluations(sessionId: string, agentType?: string): any[] {
+    let stmt;
+    let rows;
+
+    if (agentType) {
+      stmt = this.db.prepare('SELECT * FROM evaluations WHERE session_id = ? AND agent_type = ? ORDER BY timestamp DESC');
+      rows = stmt.all(sessionId, agentType);
+    } else {
+      stmt = this.db.prepare('SELECT * FROM evaluations WHERE session_id = ? ORDER BY timestamp DESC');
+      rows = stmt.all(sessionId);
+    }
+
+    return (rows as any[]).map(row => ({
+      id: row.id,
+      sessionId: row.session_id,
+      agentType: row.agent_type,
+      metrics: JSON.parse(row.metrics),
+      feedback: JSON.parse(row.feedback),
+      timestamp: new Date(row.timestamp),
+    }));
+  }
+
+  getEvaluation(id: string): any | null {
+    const stmt = this.db.prepare('SELECT * FROM evaluations WHERE id = ?');
+    const row = stmt.get(id) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      agentType: row.agent_type,
+      metrics: JSON.parse(row.metrics),
+      feedback: JSON.parse(row.feedback),
+      timestamp: new Date(row.timestamp),
+    };
+  }
+
+  getLatestEvaluation(sessionId: string): any | null {
+    const stmt = this.db.prepare('SELECT * FROM evaluations WHERE session_id = ? ORDER BY timestamp DESC LIMIT 1');
+    const row = stmt.get(sessionId) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      agentType: row.agent_type,
+      metrics: JSON.parse(row.metrics),
+      feedback: JSON.parse(row.feedback),
+      timestamp: new Date(row.timestamp),
     };
   }
 
