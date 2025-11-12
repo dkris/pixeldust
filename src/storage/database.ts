@@ -90,6 +90,45 @@ export class DatabaseManager {
       )
     `);
 
+    // Create snapshots table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS snapshots (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        component TEXT NOT NULL,
+        url TEXT NOT NULL,
+        viewport TEXT NOT NULL,
+        screenshot_path TEXT,
+        dom_snapshot TEXT,
+        computed_styles TEXT,
+        metrics TEXT,
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id)
+      )
+    `);
+
+    // Create snapshot_comparisons table
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS snapshot_comparisons (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        base_snapshot_id TEXT NOT NULL,
+        target_snapshot_id TEXT NOT NULL,
+        component TEXT NOT NULL,
+        visual_diff TEXT,
+        dom_diff TEXT,
+        style_diff TEXT,
+        similarity_score REAL NOT NULL,
+        differences_found INTEGER NOT NULL,
+        verdict TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id),
+        FOREIGN KEY (base_snapshot_id) REFERENCES snapshots(id),
+        FOREIGN KEY (target_snapshot_id) REFERENCES snapshots(id)
+      )
+    `);
+
     // Create indices
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
@@ -99,6 +138,11 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_remediations_status ON remediations(status);
       CREATE INDEX IF NOT EXISTS idx_test_suites_session ON test_suites(session_id);
       CREATE INDEX IF NOT EXISTS idx_test_suites_component ON test_suites(component);
+      CREATE INDEX IF NOT EXISTS idx_snapshots_session ON snapshots(session_id);
+      CREATE INDEX IF NOT EXISTS idx_snapshots_component ON snapshots(component);
+      CREATE INDEX IF NOT EXISTS idx_snapshots_version ON snapshots(version);
+      CREATE INDEX IF NOT EXISTS idx_snapshot_comparisons_session ON snapshot_comparisons(session_id);
+      CREATE INDEX IF NOT EXISTS idx_snapshot_comparisons_component ON snapshot_comparisons(component);
     `);
   }
 
@@ -369,6 +413,169 @@ export class DatabaseManager {
       component: row.component,
       tests: JSON.parse(row.tests),
       generatedAt: new Date(row.generated_at),
+    };
+  }
+
+  // ============================================================================
+  // Snapshot Operations
+  // ============================================================================
+
+  saveSnapshot(snapshot: any): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO snapshots (
+        id, session_id, version, component, url, viewport,
+        screenshot_path, dom_snapshot, computed_styles, metrics, timestamp
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      snapshot.id,
+      snapshot.sessionId,
+      snapshot.version,
+      snapshot.component,
+      snapshot.url,
+      JSON.stringify(snapshot.viewport),
+      snapshot.screenshotPath,
+      snapshot.domSnapshot,
+      snapshot.computedStyles ? JSON.stringify(snapshot.computedStyles) : null,
+      snapshot.metrics ? JSON.stringify(snapshot.metrics) : null,
+      snapshot.timestamp || Date.now()
+    );
+  }
+
+  getSnapshots(sessionId: string, version?: string, component?: string): any[] {
+    let query = 'SELECT * FROM snapshots WHERE session_id = ?';
+    const params: any[] = [sessionId];
+
+    if (version) {
+      query += ' AND version = ?';
+      params.push(version);
+    }
+
+    if (component) {
+      query += ' AND component = ?';
+      params.push(component);
+    }
+
+    query += ' ORDER BY component, timestamp';
+
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      sessionId: row.session_id,
+      version: row.version,
+      component: row.component,
+      url: row.url,
+      viewport: JSON.parse(row.viewport),
+      screenshotPath: row.screenshot_path,
+      domSnapshot: row.dom_snapshot,
+      computedStyles: row.computed_styles ? JSON.parse(row.computed_styles) : null,
+      metrics: row.metrics ? JSON.parse(row.metrics) : null,
+      timestamp: row.timestamp,
+    }));
+  }
+
+  getSnapshot(id: string): any | null {
+    const stmt = this.db.prepare('SELECT * FROM snapshots WHERE id = ?');
+    const row = stmt.get(id) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      version: row.version,
+      component: row.component,
+      url: row.url,
+      viewport: JSON.parse(row.viewport),
+      screenshotPath: row.screenshot_path,
+      domSnapshot: row.dom_snapshot,
+      computedStyles: row.computed_styles ? JSON.parse(row.computed_styles) : null,
+      metrics: row.metrics ? JSON.parse(row.metrics) : null,
+      timestamp: row.timestamp,
+    };
+  }
+
+  // ============================================================================
+  // Snapshot Comparison Operations
+  // ============================================================================
+
+  saveSnapshotComparison(comparison: any): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO snapshot_comparisons (
+        id, session_id, base_snapshot_id, target_snapshot_id, component,
+        visual_diff, dom_diff, style_diff, similarity_score,
+        differences_found, verdict, timestamp
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      comparison.id,
+      comparison.sessionId,
+      comparison.baseSnapshotId,
+      comparison.targetSnapshotId,
+      comparison.component,
+      comparison.visualDiff ? JSON.stringify(comparison.visualDiff) : null,
+      comparison.domDiff ? JSON.stringify(comparison.domDiff) : null,
+      comparison.styleDiff ? JSON.stringify(comparison.styleDiff) : null,
+      comparison.similarityScore,
+      comparison.differencesFound,
+      comparison.verdict,
+      comparison.timestamp || Date.now()
+    );
+  }
+
+  getSnapshotComparisons(sessionId: string, component?: string): any[] {
+    let query = 'SELECT * FROM snapshot_comparisons WHERE session_id = ?';
+    const params: any[] = [sessionId];
+
+    if (component) {
+      query += ' AND component = ?';
+      params.push(component);
+    }
+
+    query += ' ORDER BY component, timestamp';
+
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      sessionId: row.session_id,
+      baseSnapshotId: row.base_snapshot_id,
+      targetSnapshotId: row.target_snapshot_id,
+      component: row.component,
+      visualDiff: row.visual_diff ? JSON.parse(row.visual_diff) : null,
+      domDiff: row.dom_diff ? JSON.parse(row.dom_diff) : null,
+      styleDiff: row.style_diff ? JSON.parse(row.style_diff) : null,
+      similarityScore: row.similarity_score,
+      differencesFound: row.differences_found,
+      verdict: row.verdict,
+      timestamp: row.timestamp,
+    }));
+  }
+
+  getSnapshotComparison(id: string): any | null {
+    const stmt = this.db.prepare('SELECT * FROM snapshot_comparisons WHERE id = ?');
+    const row = stmt.get(id) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      baseSnapshotId: row.base_snapshot_id,
+      targetSnapshotId: row.target_snapshot_id,
+      component: row.component,
+      visualDiff: row.visual_diff ? JSON.parse(row.visual_diff) : null,
+      domDiff: row.dom_diff ? JSON.parse(row.dom_diff) : null,
+      styleDiff: row.style_diff ? JSON.parse(row.style_diff) : null,
+      similarityScore: row.similarity_score,
+      differencesFound: row.differences_found,
+      verdict: row.verdict,
+      timestamp: row.timestamp,
     };
   }
 
