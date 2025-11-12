@@ -199,6 +199,25 @@ export class DatabaseManager {
     };
   }
 
+  getSessions(limit?: number): Session[] {
+    const query = limit
+      ? 'SELECT * FROM sessions ORDER BY created_at DESC LIMIT ?'
+      : 'SELECT * FROM sessions ORDER BY created_at DESC';
+
+    const stmt = this.db.prepare(query);
+    const rows = limit ? stmt.all(limit) : stmt.all();
+
+    return (rows as any[]).map(row => ({
+      id: row.id,
+      state: row.state as SessionState,
+      config: JSON.parse(row.config),
+      versions: JSON.parse(row.versions),
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+    }));
+  }
+
   updateSessionState(id: string, state: SessionState): void {
     const stmt = this.db.prepare(`
       UPDATE sessions SET state = ?, updated_at = ? WHERE id = ?

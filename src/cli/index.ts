@@ -3,11 +3,13 @@
 import { Command } from 'commander';
 import { v4 as uuidv4 } from 'uuid';
 import ora from 'ora';
+import open from 'open';
 import { ConfigLoader } from '../core/config-loader';
 import { DatabaseManager } from '../storage/database';
 import { OrchestratorAgent } from '../agents/orchestrator-agent';
 import { Session, SessionState, Config } from '../types';
 import { ReportGenerator } from '../core/report-generator';
+import { WebServer } from '../web/server';
 import Logger from '../utils/logger';
 import fs from 'fs/promises';
 import path from 'path';
@@ -480,6 +482,84 @@ program
       db.close();
     } catch (error) {
       logger.error('Show evaluation command failed', error as Error);
+      process.exit(1);
+    }
+  });
+
+// ============================================================================
+// Show Diff Command
+// ============================================================================
+
+program
+  .command('show-diff <session-id>')
+  .description('Open interactive diff viewer in browser')
+  .option('-p, --port <port>', 'Port to run web server on', '3000')
+  .option('--no-open', 'Do not open browser automatically')
+  .action(async (sessionId, options) => {
+    const spinner = ora('Starting diff viewer').start();
+
+    try {
+      const db = new DatabaseManager();
+      const session = db.getSession(sessionId);
+
+      if (!session) {
+        spinner.fail(`Session ${sessionId} not found`);
+        process.exit(1);
+      }
+
+      const port = parseInt(options.port, 10);
+      const webServer = new WebServer(db, port);
+
+      spinner.text = `Starting web server on port ${port}`;
+
+      await webServer.start();
+
+      const url = `http://localhost:${port}/?session=${sessionId}`;
+
+      spinner.succeed(`Diff viewer started at ${url}`);
+
+      console.log(`\n📊 PixelDust Diff Viewer`);
+      console.log(`${'='.repeat(50)}`);
+      console.log(`Session: ${sessionId}`);
+      console.log(`URL: ${url}`);
+      console.log(`\nPress Ctrl+C to stop the server\n`);
+
+      // Open browser if not disabled
+      if (options.open !== false) {
+        try {
+          await open(url);
+          console.log('✓ Opened browser automatically\n');
+        } catch (error) {
+          console.log('⚠ Could not open browser automatically. Please open the URL manually.\n');
+        }
+      }
+
+      // Keep the server running
+      process.on('SIGINT', async () => {
+        console.log('\n\nShutting down web server...');
+        await webServer.stop();
+        db.close();
+        process.exit(0);
+      });
+
+      process.on('SIGTERM', async () => {
+        await webServer.stop();
+        db.close();
+        process.exit(0);
+      });
+
+      // Keep process alive
+      await new Promise(() => {});
+    } catch (error: any) {
+      spinner.fail('Failed to start diff viewer');
+
+      if (error.message && error.message.includes('already in use')) {
+        console.error(`\n❌ Port ${options.port} is already in use.`);
+        console.error(`   Try using a different port: pixeldust show-diff ${sessionId} --port 3001\n`);
+      } else {
+        logger.error('Show diff command failed', error as Error);
+      }
+
       process.exit(1);
     }
   });
