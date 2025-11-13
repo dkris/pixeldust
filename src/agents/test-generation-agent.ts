@@ -255,7 +255,52 @@ export class TestGenerationAgent extends BaseAgent {
   }
 
   private async generateTestsForComponent(component: string, config: any): Promise<Test[]> {
-    const prompt = `Generate comprehensive test scenarios for the "${component}" web component.
+    // Determine if we're in application mode or framework-only mode
+    const isApplicationMode = !!config.application;
+
+    let prompt: string;
+
+    if (isApplicationMode) {
+      // Application-aware test generation
+      prompt = `Generate comprehensive test scenarios for the "${component}" web component IN THE CONTEXT of a real application.
+
+IMPORTANT: These tests will run against the actual application at ${config.application.path}, NOT standalone components.
+
+Generate tests in the following categories with balanced distribution:
+1. Functional tests (40%) - Test how ${component} works within the application's features
+   - Navigate to pages where ${component} is used
+   - Test interactions in the context of real workflows
+   - Verify component behavior affects application state correctly
+
+2. Visual tests (25%) - Verify ${component} renders correctly in the application
+   - Test in real page layouts, not isolation
+   - Verify styling matches application theme
+   - Check responsiveness within actual pages
+
+3. Accessibility tests (20%) - Test a11y in application context
+   - ARIA attributes work with application flow
+   - Keyboard navigation works in real scenarios
+   - Screen reader support in actual user journeys
+
+4. Performance tests (15%) - Measure performance in application
+   - Page load time with ${component}
+   - Interaction responsiveness in real workflows
+   - Resource usage in application context
+
+For each test, provide:
+- A unique descriptive name (kebab-case) that reflects the application context
+- Clear description of what application functionality is being tested
+- Category that matches one of the four above
+- Complete Playwright test code that navigates the actual application
+
+Example test names:
+- "${component}-login-form-submission" (not just "button-click")
+- "${component}-dashboard-data-display" (not just "table-renders")
+
+Generate 6-8 tests that verify the component works correctly within the application's real workflows.`;
+    } else {
+      // Framework-only mode (existing behavior)
+      prompt = `Generate comprehensive test scenarios for the "${component}" web component.
 
 Generate tests in the following categories with balanced distribution:
 1. Functional tests (40%) - User interactions, state changes, behavior verification
@@ -274,6 +319,7 @@ For each test, provide:
 The component will be tested across multiple versions, so focus on core functionality that should remain consistent.
 
 Generate 6-8 comprehensive tests with representation from all categories.`;
+    }
 
     try {
       const response = await this.ai.messages.create({

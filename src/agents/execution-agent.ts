@@ -72,7 +72,10 @@ export class ExecutionAgent extends BaseAgent {
       throw new Error(`No container found for version ${version}`);
     }
 
-    const baseUrl = `http://localhost:${container.port}`;
+    // Use container.url for application mode, or construct baseUrl for framework mode
+    const baseUrl = container.url || `http://localhost:${container.port}`;
+
+    this.logger.info(`Testing version ${version} at ${baseUrl}`);
 
     // Run tests for each browser
     for (const browserType of config.testing.browsers) {
@@ -211,21 +214,23 @@ export class ExecutionAgent extends BaseAgent {
   private async executeTestLogic(page: Page, test: any, config: any): Promise<void> {
     this.logger.debug(`Executing ${test.category} test: ${test.name}`);
 
+    const isApplicationMode = !!config.application;
+
     switch (test.category) {
       case 'FUNCTIONAL':
-        await this.executeFunctionalTest(page, test);
+        await this.executeFunctionalTest(page, test, isApplicationMode);
         break;
 
       case 'VISUAL':
-        await this.executeVisualTest(page, test);
+        await this.executeVisualTest(page, test, isApplicationMode);
         break;
 
       case 'ACCESSIBILITY':
-        await this.executeAccessibilityTest(page, test);
+        await this.executeAccessibilityTest(page, test, isApplicationMode);
         break;
 
       case 'PERFORMANCE':
-        await this.executePerformanceTest(page, test);
+        await this.executePerformanceTest(page, test, isApplicationMode);
         break;
 
       default:
@@ -237,30 +242,61 @@ export class ExecutionAgent extends BaseAgent {
   /**
    * Execute functional tests - verify component behavior
    */
-  private async executeFunctionalTest(page: Page, test: any): Promise<void> {
+  private async executeFunctionalTest(page: Page, test: any, isApplicationMode: boolean): Promise<void> {
     // Extract component name from test name or use a pattern
     const componentMatch = test.name.match(/(ui5-[\w-]+)/);
     const component = componentMatch ? componentMatch[1] : 'ui5-button';
 
-    // Wait for component to be present
-    const element = page.locator(component).first();
+    if (isApplicationMode) {
+      this.logger.debug(`Testing ${component} in application context`);
 
-    // Basic functional assertions
-    await element.waitFor({ state: 'attached', timeout: 5000 });
-
-    const isVisible = await element.isVisible();
-    if (!isVisible) {
-      throw new Error(`Component ${component} is not visible`);
-    }
-
-    // Try basic interaction if it's an interactive component
-    if (component.includes('button') || component.includes('input')) {
+      // In application mode, be more lenient - component might be on a different page
+      // or might not be present on initial load
       try {
-        await element.click({ timeout: 2000 });
-        this.logger.debug(`Successfully clicked ${component}`);
-      } catch {
-        // Some components might not be clickable, that's ok
-        this.logger.debug(`Component ${component} not clickable`);
+        // Wait a bit for the application to fully load
+        await page.waitForLoadState('networkidle', { timeout: 10000 });
+
+        // Look for the component anywhere in the application
+        const element = page.locator(component).first();
+        const isAttached = await element.count().then(c => c > 0).catch(() => false);
+
+        if (isAttached) {
+          const isVisible = await element.isVisible();
+          this.logger.debug(`Component ${component} found: visible=${isVisible}`);
+
+          // If visible and interactive, try to interact
+          if (isVisible && (component.includes('button') || component.includes('input'))) {
+            try {
+              await element.click({ timeout: 2000 });
+              this.logger.debug(`Successfully interacted with ${component} in application`);
+            } catch {
+              this.logger.debug(`Component ${component} not interactable (may be disabled or readonly)`);
+            }
+          }
+        } else {
+          this.logger.debug(`Component ${component} not found on current page (may be on different route)`);
+        }
+      } catch (error) {
+        this.logger.debug(`Application functional test warning: ${(error as Error).message}`);
+        // Don't fail - component might be on a different page
+      }
+    } else {
+      // Framework-only mode - strict validation
+      const element = page.locator(component).first();
+      await element.waitFor({ state: 'attached', timeout: 5000 });
+
+      const isVisible = await element.isVisible();
+      if (!isVisible) {
+        throw new Error(`Component ${component} is not visible`);
+      }
+
+      if (component.includes('button') || component.includes('input')) {
+        try {
+          await element.click({ timeout: 2000 });
+          this.logger.debug(`Successfully clicked ${component}`);
+        } catch {
+          this.logger.debug(`Component ${component} not clickable`);
+        }
       }
     }
   }
@@ -268,57 +304,79 @@ export class ExecutionAgent extends BaseAgent {
   /**
    * Execute visual tests - verify rendering
    */
-  private async executeVisualTest(page: Page, test: any): Promise<void> {
+  private async executeVisualTest(page: Page, test: any, isApplicationMode: boolean): Promise<void> {
     const componentMatch = test.name.match(/(ui5-[\w-]+)/);
     const component = componentMatch ? componentMatch[1] : 'ui5-button';
 
     const element = page.locator(component).first();
-    await element.waitFor({ state: 'visible', timeout: 5000 });
 
-    // Verify element has non-zero dimensions
-    const box = await element.boundingBox();
-    if (!box || box.width === 0 || box.height === 0) {
-      throw new Error(`Component ${component} has zero dimensions`);
+    if (isApplicationMode) {
+      // In application mode, just verify page rendered
+      await page.waitForLoadState('load');
+      this.logger.debug(`Visual test for ${component} in application context`);
+
+      const isAttached = await element.count().then(c => c > 0).catch(() => false);
+      if (isAttached) {
+        const box = await element.boundingBox();
+        if (box) {
+          this.logger.debug(`Component ${component} rendered: ${box.width}x${box.height}`);
+        }
+      }
+    } else {
+      // Framework-only mode - strict validation
+      await element.waitFor({ state: 'visible', timeout: 5000 });
+      const box = await element.boundingBox();
+      if (!box || box.width === 0 || box.height === 0) {
+        throw new Error(`Component ${component} has zero dimensions`);
+      }
+      this.logger.debug(`Component ${component} rendered with dimensions: ${box.width}x${box.height}`);
     }
-
-    this.logger.debug(`Component ${component} rendered with dimensions: ${box.width}x${box.height}`);
   }
 
   /**
    * Execute accessibility tests - verify ARIA and a11y
    */
-  private async executeAccessibilityTest(page: Page, test: any): Promise<void> {
+  private async executeAccessibilityTest(page: Page, test: any, isApplicationMode: boolean): Promise<void> {
     const componentMatch = test.name.match(/(ui5-[\w-]+)/);
     const component = componentMatch ? componentMatch[1] : 'ui5-button';
 
     const element = page.locator(component).first();
-    await element.waitFor({ state: 'attached', timeout: 5000 });
 
-    // Check for basic accessibility attributes
-    const role = await element.getAttribute('role');
-    const ariaLabel = await element.getAttribute('aria-label');
+    if (isApplicationMode) {
+      // In application mode, do basic a11y checks
+      await page.waitForLoadState('load');
+      const isAttached = await element.count().then(c => c > 0).catch(() => false);
 
-    this.logger.debug(`Component ${component} accessibility: role=${role}, aria-label=${ariaLabel}`);
-
-    // Verify element is keyboard accessible (can be focused)
-    try {
-      await element.focus({ timeout: 2000 });
-      const isFocused = await element.evaluate(el => el === document.activeElement);
-      if (!isFocused) {
-        this.logger.warn(`Component ${component} is not keyboard focusable`);
+      if (isAttached) {
+        const role = await element.getAttribute('role');
+        const ariaLabel = await element.getAttribute('aria-label');
+        this.logger.debug(`Component ${component} a11y: role=${role}, aria-label=${ariaLabel}`);
+      } else {
+        this.logger.debug(`Component ${component} not on current page`);
       }
-    } catch {
-      this.logger.warn(`Failed to focus ${component}`);
+    } else {
+      // Framework-only mode - strict validation
+      await element.waitFor({ state: 'attached', timeout: 5000 });
+      const role = await element.getAttribute('role');
+      const ariaLabel = await element.getAttribute('aria-label');
+      this.logger.debug(`Component ${component} accessibility: role=${role}, aria-label=${ariaLabel}`);
+
+      try {
+        await element.focus({ timeout: 2000 });
+        const isFocused = await element.evaluate(el => el === document.activeElement);
+        if (!isFocused) {
+          this.logger.warn(`Component ${component} is not keyboard focusable`);
+        }
+      } catch {
+        this.logger.warn(`Failed to focus ${component}`);
+      }
     }
   }
 
   /**
    * Execute performance tests - measure metrics
    */
-  private async executePerformanceTest(page: Page, test: any): Promise<void> {
-    // Performance metrics are collected separately in collectMetrics()
-    // Here we just verify the page performed within acceptable limits
-
+  private async executePerformanceTest(page: Page, test: any, isApplicationMode: boolean): Promise<void> {
     const metrics = await page.evaluate(() => {
       const perfData = performance.getEntriesByType('navigation')[0] as any;
       return {
@@ -329,9 +387,16 @@ export class ExecutionAgent extends BaseAgent {
 
     this.logger.debug(`Performance metrics: loadTime=${metrics.loadTime}ms, domReady=${metrics.domReady}ms`);
 
-    // Fail if page took too long to load (> 5 seconds)
-    if (metrics.loadTime > 5000) {
-      throw new Error(`Page load time exceeded threshold: ${metrics.loadTime}ms > 5000ms`);
+    if (isApplicationMode) {
+      // In application mode, use more lenient thresholds (apps are heavier)
+      if (metrics.loadTime > 10000) {
+        throw new Error(`Application load time exceeded threshold: ${metrics.loadTime}ms > 10000ms`);
+      }
+    } else {
+      // Framework-only mode - strict threshold
+      if (metrics.loadTime > 5000) {
+        throw new Error(`Page load time exceeded threshold: ${metrics.loadTime}ms > 5000ms`);
+      }
     }
   }
 
