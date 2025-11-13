@@ -7,9 +7,11 @@ import open from 'open';
 import { ConfigLoader } from '../core/config-loader';
 import { DatabaseManager } from '../storage/database';
 import { OrchestratorAgent } from '../agents/orchestrator-agent';
+import { WorkflowDiscoveryAgent } from '../agents/workflow-discovery-agent';
 import { Session, SessionState, Config } from '../types';
 import { ReportGenerator } from '../core/report-generator';
 import { WebServer } from '../web/server';
+import { WorkflowReporter } from '../utils/workflow-reporter';
 import Logger from '../utils/logger';
 import fs from 'fs/promises';
 import path from 'path';
@@ -20,7 +22,7 @@ const logger = new Logger('CLI');
 program
   .name('pixeldust')
   .description('Agentic AI system for automated UI version testing and remediation')
-  .version('0.1.0');
+  .version('0.2.0');
 
 // ============================================================================
 // Init Command
@@ -560,6 +562,200 @@ program
         logger.error('Show diff command failed', error as Error);
       }
 
+      process.exit(1);
+    }
+  });
+
+// ============================================================================
+// Discover Workflows Command
+// ============================================================================
+
+program
+  .command('discover-workflows')
+  .description('Discover and document application workflows')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('-u, --url <url>', 'Application URL (overrides config)')
+  .option('-o, --output <path>', 'Output file path', './workflow-documentation.md')
+  .option('-f, --format <format>', 'Output format (markdown, json, html)', 'markdown')
+  .option('--max-depth <number>', 'Maximum crawl depth', '3')
+  .option('--max-pages <number>', 'Maximum pages to crawl', '50')
+  .option('--no-screenshots', 'Skip taking screenshots')
+  .action(async (options) => {
+    const spinner = ora('Starting workflow discovery').start();
+
+    try {
+      let config: Config;
+      let applicationUrl: string;
+
+      // Load config if provided
+      if (options.config) {
+        spinner.text = 'Loading configuration';
+        const configLoader = new ConfigLoader();
+        config = await configLoader.load(options.config);
+
+        if (!config.application) {
+          spinner.fail('Configuration must include application settings for workflow discovery');
+          console.log('\nWorkflow discovery requires an application to crawl.');
+          console.log('Please add an application section to your config:\n');
+          console.log(JSON.stringify({
+            application: {
+              path: './path/to/your/app',
+              url: 'http://localhost:3000',
+              port: 3000,
+            }
+          }, null, 2));
+          process.exit(1);
+        }
+
+        applicationUrl = options.url || `http://localhost:${config.application.port}`;
+      } else if (options.url) {
+        // Minimal config with just URL
+        applicationUrl = options.url;
+        const urlObj = new URL(applicationUrl);
+        const port = urlObj.port ? parseInt(urlObj.port, 10) : (urlObj.protocol === 'https:' ? 443 : 80);
+
+        config = {
+          framework: {
+            name: 'react',
+            versions: ['latest'],
+          },
+          components: {
+            include: [],
+            exclude: [],
+          },
+          containers: {
+            runtime: 'docker',
+            baseImage: 'node:18-alpine',
+            resources: {
+              memory: '2g',
+              cpu: 2,
+            },
+          },
+          application: {
+            path: process.cwd(),
+            buildCommand: 'npm run build',
+            startCommand: 'npm start',
+            port: port,
+          },
+          testing: {
+            browsers: ['chromium'],
+            viewport: {
+              width: 1920,
+              height: 1080,
+            },
+            timeout: 30000,
+            retries: 0,
+            headless: true,
+          },
+          analysis: {
+            visualThreshold: 0.1,
+            domIgnoreAttributes: [],
+            performanceThresholds: {
+              fcp: 1800,
+              lcp: 2500,
+              tti: 3800,
+            },
+          },
+          ai: {
+            provider: 'anthropic',
+            model: 'claude-sonnet-4-5-20250929',
+            temperature: 0.7,
+            maxTokens: 4096,
+          },
+          storage: {
+            type: 'local',
+            path: './data',
+          },
+          reporting: {
+            format: ['markdown'],
+            outputPath: './reports',
+          },
+        } as Config;
+      } else {
+        spinner.fail('Either --config or --url must be provided');
+        console.log('\nUsage:');
+        console.log('  pixeldust discover-workflows --config .pixeldustrc.json');
+        console.log('  pixeldust discover-workflows --url http://localhost:3000\n');
+        process.exit(1);
+      }
+
+      // Create session for workflow discovery
+      const session: Session = {
+        id: uuidv4(),
+        state: SessionState.WORKFLOW_DISCOVERY,
+        config,
+        versions: config.framework.versions,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      spinner.text = `Discovering workflows from ${applicationUrl}`;
+      logger.info(`Starting workflow discovery for ${applicationUrl}`);
+
+      // Run workflow discovery
+      const workflowAgent = new WorkflowDiscoveryAgent();
+      const result = await workflowAgent.execute({
+        session,
+        config,
+        data: {
+          containers: [{
+            url: applicationUrl,
+            version: 'current',
+            containerId: 'standalone',
+            port: new URL(applicationUrl).port ? parseInt(new URL(applicationUrl).port, 10) : 80,
+          }],
+        },
+      });
+
+      if (!result.success) {
+        throw result.error || new Error('Workflow discovery failed');
+      }
+
+      spinner.text = 'Generating documentation';
+
+      // Generate report
+      const reporter = new WorkflowReporter();
+      const reportPath = await reporter.generateReport(
+        result.data,
+        options.output,
+        options.format
+      );
+
+      spinner.succeed(`Workflow documentation generated: ${reportPath}`);
+
+      // Display summary
+      console.log(`\n📊 Discovery Summary:`);
+      console.log(`   Application: ${applicationUrl}`);
+      console.log(`   Pages Discovered: ${result.data.pages.length}`);
+      console.log(`   Workflows Identified: ${result.data.workflows.length}`);
+      console.log(`   Components Found: ${result.data.componentUsage.length}`);
+      console.log(`   Format: ${options.format}`);
+      console.log(`   Output: ${reportPath}`);
+
+      // Show top components
+      if (result.data.componentUsage.length > 0) {
+        console.log(`\n🎯 Top Components:`);
+        const topComponents = result.data.componentUsage
+          .sort((a: any, b: any) => b.count - a.count)
+          .slice(0, 5);
+
+        topComponents.forEach((comp: any) => {
+          console.log(`   ${comp.tag} - used ${comp.count} time(s) across ${comp.pages.length} page(s)`);
+        });
+      }
+
+      // Show workflows
+      if (result.data.workflows.length > 0) {
+        console.log(`\n🔄 Discovered Workflows:`);
+        result.data.workflows.forEach((workflow: any, idx: number) => {
+          console.log(`   ${idx + 1}. ${workflow.name} (${workflow.steps.length} steps, priority: ${workflow.priority})`);
+        });
+      }
+
+      console.log(`\n✅ Documentation saved to: ${reportPath}\n`);
+    } catch (error) {
+      spinner.fail('Workflow discovery failed');
+      logger.error('Discovery failed', error as Error);
       process.exit(1);
     }
   });

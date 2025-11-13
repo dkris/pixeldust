@@ -480,6 +480,16 @@ export interface Workflow {
   components: string[];
   /** Estimated workflow priority (based on link depth, etc.) */
   priority: 'high' | 'medium' | 'low';
+  /** Phase 3: Preconditions required to start workflow */
+  preconditions?: WorkflowCondition[];
+  /** Phase 3: Expected postconditions after workflow completion */
+  postconditions?: WorkflowCondition[];
+  /** Phase 3: Data dependencies and flow */
+  dataFlow?: DataFlowNode[];
+  /** Estimated completion time in seconds */
+  estimatedDuration?: number;
+  /** Tags for categorization */
+  tags?: string[];
 }
 
 /**
@@ -492,13 +502,69 @@ export interface WorkflowStep {
   page: string;
   /** Action to perform */
   action?: {
-    type: 'click' | 'input' | 'submit' | 'navigate' | 'wait';
+    type: 'click' | 'input' | 'submit' | 'navigate' | 'wait' | 'verify';
     selector?: string;
     value?: string;
     description: string;
   };
   /** Expected outcome */
   expectedOutcome?: string;
+  /** Phase 3: State before this step */
+  preState?: ApplicationState;
+  /** Phase 3: Expected state after this step */
+  postState?: ApplicationState;
+  /** Phase 3: Data required for this step */
+  requiredData?: string[];
+  /** Phase 3: Data produced by this step */
+  producedData?: string[];
+}
+
+/**
+ * Phase 3: Workflow condition (precondition or postcondition)
+ */
+export interface WorkflowCondition {
+  /** Condition type */
+  type: 'authentication' | 'data' | 'state' | 'permission';
+  /** Human-readable description */
+  description: string;
+  /** Validation rule */
+  rule: string;
+  /** Whether this is required (true) or optional (false) */
+  required: boolean;
+}
+
+/**
+ * Phase 3: Application state at a point in time
+ */
+export interface ApplicationState {
+  /** URL/route */
+  url: string;
+  /** Local storage data */
+  localStorage?: Record<string, string>;
+  /** Session storage data */
+  sessionStorage?: Record<string, string>;
+  /** Cookies */
+  cookies?: Array<{ name: string; value: string }>;
+  /** DOM state indicators */
+  domState?: Record<string, any>;
+  /** Custom application state */
+  appState?: Record<string, any>;
+}
+
+/**
+ * Phase 3: Data flow node in a workflow
+ */
+export interface DataFlowNode {
+  /** Step number where data is produced */
+  sourceStep: number;
+  /** Step number where data is consumed */
+  targetStep: number;
+  /** Data identifier/name */
+  dataKey: string;
+  /** Data type */
+  dataType: 'input' | 'computed' | 'fetched' | 'stored';
+  /** Whether data persists across steps */
+  persistent: boolean;
 }
 
 /**

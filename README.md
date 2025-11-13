@@ -350,6 +350,85 @@ Or use locally:
 npm install --save-dev @pixeldust/ui-version-tester
 ```
 
+## Standalone Workflow Discovery
+
+The `discover-workflows` command allows you to independently discover and document your application's structure without running the full test suite. This is useful for:
+
+- Understanding application architecture before testing
+- Generating comprehensive workflow documentation
+- Sharing application structure with team members
+- Planning test coverage strategies
+
+### Usage
+
+**With a running application:**
+```bash
+# Discover workflows from a running application
+pixeldust discover-workflows --url http://localhost:3000
+
+# With custom options
+pixeldust discover-workflows \
+  --url http://localhost:3000 \
+  --output ./docs/workflows.md \
+  --format markdown \
+  --max-depth 3 \
+  --max-pages 50
+```
+
+**With PixelDust configuration:**
+```bash
+# Use existing configuration
+pixeldust discover-workflows --config .pixeldustrc.json
+
+# Override URL from config
+pixeldust discover-workflows \
+  --config .pixeldustrc.json \
+  --url http://localhost:8080
+```
+
+### Output Formats
+
+- **Markdown** (default): Human-readable documentation with Mermaid diagrams
+- **JSON**: Machine-readable workflow data for automation
+- **HTML**: Interactive documentation with navigation
+
+### Generated Documentation
+
+The workflow documentation includes:
+
+- **Executive Summary**: Overview of application structure
+- **Application Site Map**: Visual representation of page hierarchy
+- **Detailed Page Information**: Components, interactive elements, and navigation
+- **Workflow Visualization**: Mermaid diagrams showing user flows
+- **Component Usage Analysis**: Where components are used across the application
+- **Navigation Graph**: How pages connect to each other
+
+### Example Output
+
+```bash
+$ pixeldust discover-workflows --url http://localhost:3000
+
+📊 Discovery Summary:
+   Application: http://localhost:3000
+   Pages Discovered: 12
+   Workflows Identified: 5
+   Components Found: 28
+   Format: markdown
+   Output: ./workflow-documentation.md
+
+🎯 Top Components:
+   ui5-button - used 45 time(s) across 12 page(s)
+   ui5-input - used 23 time(s) across 8 page(s)
+   ui5-table - used 15 time(s) across 6 page(s)
+
+🔄 Discovered Workflows:
+   1. User Authentication Flow (4 steps, priority: high)
+   2. Dashboard Navigation (3 steps, priority: high)
+   3. Data Entry Workflow (6 steps, priority: medium)
+
+✅ Documentation saved to: ./workflow-documentation.md
+```
+
 ## Quick Start
 
 ### 1. Initialize
@@ -500,6 +579,12 @@ interface Config {
 | `pixeldust resume <id>` | Resume interrupted session |
 | `pixeldust list` | List all sessions |
 
+### Discovery Commands
+
+| Command | Description |
+|---------|-------------|
+| `pixeldust discover-workflows` | Standalone workflow discovery and documentation |
+
 ### Viewing Results
 
 | Command | Description |
@@ -522,6 +607,11 @@ interface Config {
 pixeldust init
 export ANTHROPIC_API_KEY="sk-..."
 npx playwright install chromium
+
+# Discover
+pixeldust discover-workflows --url http://localhost:3000
+pixeldust discover-workflows --config .pixeldustrc.json
+pixeldust discover-workflows --url http://localhost:3000 --output ./workflows.md --format markdown
 
 # Run
 pixeldust test
