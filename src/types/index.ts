@@ -19,9 +19,13 @@ export interface Config {
   upgrade?: UpgradeConfig;
 }
 
+export type FrameworkType = 'web-components' | 'react' | 'react-ui5' | 'vue' | 'angular';
+
 export interface FrameworkConfig {
-  name: '@ui5/webcomponents' | string;
+  name: string; // e.g., '@ui5/webcomponents', 'react', '@ui5/webcomponents-react'
+  type?: FrameworkType; // Auto-detected if not specified
   versions: string[];
+  relatedPackages?: string[]; // e.g., for React: ['react-dom'], for React UI5: ['@ui5/webcomponents']
 }
 
 export interface ComponentConfig {

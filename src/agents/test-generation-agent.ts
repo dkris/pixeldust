@@ -2,6 +2,13 @@ import { BaseAgent } from './base-agent';
 import { AgentType, AgentContext, AgentResult, TestSuite, Test, TestCategory } from '../types';
 import Anthropic from '@anthropic-ai/sdk';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  getComponentPrefix,
+  getImportPatterns,
+  getComponentPatterns,
+  isReactFramework,
+  detectFrameworkType
+} from '../utils/framework-detector';
 
 /**
  * Test Generation Agent - AI-powered test generation
@@ -158,32 +165,26 @@ export class TestGenerationAgent extends BaseAgent {
     const components = new Set<string>();
 
     try {
-      // Determine component prefix based on framework
-      const componentPrefix = this.getComponentPrefix(frameworkName);
+      // Get framework-specific patterns from detector
+      const importPatterns = getImportPatterns(frameworkName);
+      const componentPatterns = getComponentPatterns(frameworkName);
+      const componentPrefix = getComponentPrefix(frameworkName);
 
-      // Patterns to search for based on file type
-      const patterns = [
-        // HTML/JSX/TSX tags: <ui5-button>, <ui5-button />, <ui5-table>
-        new RegExp(`<(${componentPrefix}-[a-z0-9-]+)(?:\\s|/|>)`, 'gi'),
+      // Combine all patterns
+      const patterns = [...importPatterns, ...componentPatterns];
 
-        // ES6 imports: import "@ui5/webcomponents/dist/Button.js"
-        new RegExp(`import\\s+["']@ui5/webcomponents(?:-[a-z]+)?/dist/([A-Z][a-zA-Z0-9]+)(?:\\.js)?["']`, 'gi'),
-
-        // Dynamic imports: import("@ui5/webcomponents/dist/Button.js")
-        new RegExp(`import\\s*\\(\\s*["']@ui5/webcomponents(?:-[a-z]+)?/dist/([A-Z][a-zA-Z0-9]+)(?:\\.js)?["']\\s*\\)`, 'gi'),
-
-        // Named imports: import { Button } from "@ui5/webcomponents"
-        new RegExp(`import\\s+\\{[^}]*\\b([A-Z][a-zA-Z0-9]+)\\b[^}]*\\}\\s+from\\s+["']@ui5/webcomponents`, 'gi'),
-
-        // Require statements: require("@ui5/webcomponents/dist/Button.js")
-        new RegExp(`require\\s*\\(\\s*["']@ui5/webcomponents(?:-[a-z]+)?/dist/([A-Z][a-zA-Z0-9]+)(?:\\.js)?["']\\s*\\)`, 'gi'),
-      ];
+      // If no patterns found, use legacy approach for backward compatibility
+      if (patterns.length === 0) {
+        this.logger.warn(`No patterns found for framework ${frameworkName}, using legacy detection`);
+        const legacyPrefix = this.getComponentPrefix(frameworkName);
+        patterns.push(new RegExp(`<(${legacyPrefix}-[a-z0-9-]+)(?:\\s|/|>)`, 'gi'));
+      }
 
       // File extensions to scan
       const extensions = ['.html', '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs', '.vue', '.svelte'];
 
       // Recursively scan application directory
-      await this.scanDirectory(appPath, extensions, patterns, components, componentPrefix);
+      await this.scanDirectory(appPath, extensions, patterns, components, componentPrefix || 'ui5');
 
       this.logger.info(`Detected ${components.size} unique components in application`);
       return Array.from(components).sort();
@@ -255,17 +256,25 @@ export class TestGenerationAgent extends BaseAgent {
             // Convert component name to tag format
             let componentName = match[1];
 
-            // If it's a PascalCase import (e.g., "Button"), convert to tag format
-            if (/^[A-Z]/.test(componentName)) {
-              componentName = `${prefix}-${componentName.toLowerCase()}`;
-            }
-
-            // Normalize to lowercase
-            componentName = componentName.toLowerCase();
-
-            // Only add if it matches the framework prefix
-            if (componentName.startsWith(prefix)) {
+            // For React components (PascalCase), keep the format as-is
+            // React component names are in PascalCase (Button, Input, etc.)
+            if (/^[A-Z]/.test(componentName) && !prefix) {
+              // React component - keep PascalCase
               components.add(componentName);
+            }
+            // For web components with prefix
+            else if (prefix && componentName.startsWith(prefix)) {
+              // Normalize to lowercase for web components
+              components.add(componentName.toLowerCase());
+            }
+            // If it's a PascalCase import for a prefixed framework (e.g., UI5)
+            else if (prefix && /^[A-Z]/.test(componentName)) {
+              componentName = `${prefix}-${componentName.toLowerCase()}`;
+              components.add(componentName);
+            }
+            // Already in proper format
+            else if (componentName.includes('-')) {
+              components.add(componentName.toLowerCase());
             }
           }
         }
@@ -277,13 +286,21 @@ export class TestGenerationAgent extends BaseAgent {
   }
 
   private getComponentPrefix(frameworkName: string): string {
-    // Map framework names to component tag prefixes
+    // Use framework detector if available, fallback to legacy map
+    const detectedPrefix = getComponentPrefix(frameworkName);
+    if (detectedPrefix) {
+      return detectedPrefix;
+    }
+
+    // Legacy map for backward compatibility
     const prefixMap: Record<string, string> = {
       '@ui5/webcomponents': 'ui5',
       'ui5-webcomponents': 'ui5',
+      '@ui5/webcomponents-react': 'ui5',
       '@fluentui/web-components': 'fluent',
       '@shoelace-style/shoelace': 'sl',
       '@material/web': 'md',
+      'react': '', // React components don't have a prefix
     };
 
     return prefixMap[frameworkName] || 'ui5';

@@ -28,6 +28,42 @@ PixelDust is an AI-powered testing system that automatically discovers your appl
 - ✅ Verifies fixes and iterates until all tests pass
 - ✅ Generates comprehensive reports with visual diffs
 
+## Supported Frameworks
+
+PixelDust supports multiple UI framework ecosystems with intelligent upgrade capabilities:
+
+### Web Components
+- **UI5 Web Components** (`@ui5/webcomponents`) - SAP's enterprise web components
+- **Fluent UI Web Components** (`@fluentui/web-components`) - Microsoft's design system
+- **Shoelace** (`@shoelace-style/shoelace`) - Modern web component library
+- **Material Web** (`@material/web`) - Google's Material Design components
+
+### React Ecosystem
+- **React** (`react`) - Core React library upgrades (v16 → v17 → v18 → v19)
+  - Automatically upgrades `react-dom` to matching versions
+  - Updates TypeScript types (`@types/react`, `@types/react-dom`)
+  - Handles React 18+ breaking changes (createRoot, concurrent features)
+
+- **UI5 Web Components for React** (`@ui5/webcomponents-react`) - React wrappers for UI5
+  - Manages peer dependencies (`react`, `react-dom`, `@ui5/webcomponents`)
+  - Detects React component usage patterns (PascalCase imports)
+  - Handles both component libraries simultaneously
+
+### Framework-Specific Features
+
+**React Support:**
+- 🔍 Detects JSX/TSX component usage patterns
+- 🔄 Upgrades React, React-DOM, and TypeScript types together
+- 📦 Handles peer dependency resolution automatically
+- 🧪 Generates React-specific test patterns
+- 🛠️ Supports React 18+ concurrent features and new APIs
+
+**UI5 React Support:**
+- 🎯 Manages dual framework dependencies (React + UI5 Web Components)
+- 🔍 Detects UI5 React components from imports (`@ui5/webcomponents-react`)
+- 📊 Tests both React rendering and web component integration
+- ⚡ Ensures version compatibility across the ecosystem
+
 ## Architecture
 
 ### System Overview
@@ -704,6 +740,83 @@ Final Component List (automatically discovered):
 ✅ ui5-dialog
 ```
 
+### Example 4: React Application Upgrade
+
+Test React 17 → 18 migration with automatic dependency handling:
+
+```json
+{
+  "framework": {
+    "name": "react",
+    "versions": ["17.0.2", "18.2.0"]
+  },
+  "application": {
+    "path": "./my-react-app",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "port": 3000
+  },
+  "upgrade": {
+    "updatePeerDependencies": true,
+    "resolveConflicts": "auto"
+  }
+}
+```
+
+**What PixelDust Does Automatically:**
+- ✅ Upgrades `react` from 17.0.2 → 18.2.0
+- ✅ Upgrades `react-dom` to matching version (18.2.0)
+- ✅ Updates `@types/react` and `@types/react-dom`
+- ✅ Detects React components from JSX/TSX files
+- ✅ Generates tests for React 18 breaking changes (createRoot, etc.)
+- ✅ Tests concurrent features and new Hooks
+
+**Component Detection:**
+```tsx
+// Detects from imports
+import { useState, useEffect } from 'react';
+import { Button, Input } from './components';
+
+// Detects from JSX usage
+<Button variant="primary">Submit</Button>
+<Input placeholder="Email" />
+```
+
+### Example 5: UI5 React Migration
+
+Migrate UI5 React components with dual framework management:
+
+```json
+{
+  "framework": {
+    "name": "@ui5/webcomponents-react",
+    "versions": ["1.0.0", "2.0.0"],
+    "relatedPackages": ["react", "react-dom", "@ui5/webcomponents"]
+  },
+  "application": {
+    "path": "./ui5-react-app",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "port": 8080
+  }
+}
+```
+
+**Dual Framework Management:**
+- 🎯 Manages `@ui5/webcomponents-react` upgrade
+- 🔄 Ensures compatible `@ui5/webcomponents` version
+- ⚛️ Maintains React/React-DOM compatibility
+- 📦 Resolves peer dependencies across all packages
+
+**Component Detection:**
+```tsx
+import { Button, Input, Table } from '@ui5/webcomponents-react';
+
+<Button design="Emphasized">Submit</Button>
+<Input placeholder="Name" />
+<Table columns={[...]} />
+```
+
 ## Advanced Usage
 
 ### CI/CD Integration
@@ -814,7 +927,8 @@ const result = await orchestrator.execute({
 - [ ] Data persistence testing
 
 **Framework Support:**
-- [ ] React components
+- [x] React components (v0.2.0+)
+- [x] UI5 Web Components for React (v0.2.0+)
 - [ ] Vue components
 - [ ] Angular components
 
