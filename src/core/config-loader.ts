@@ -144,7 +144,7 @@ export class ConfigLoader {
   static getDefaultConfig(): Partial<Config> {
     return {
       framework: {
-        name: 'ui5-webcomponents',
+        name: '@ui5/webcomponents',
         versions: ['1.0.0', '2.0.0'],
       },
       components: {

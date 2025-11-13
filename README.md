@@ -177,7 +177,7 @@ Edit `.pixeldustrc.json`:
 ```json
 {
   "framework": {
-    "name": "ui5-webcomponents",
+    "name": "@ui5/webcomponents",
     "versions": ["1.0.0", "2.0.0"]
   },
   "containers": {
@@ -435,7 +435,7 @@ pixeldust report <session-id> --format html
 ```json
 {
   "framework": {
-    "name": "ui5-webcomponents",
+    "name": "@ui5/webcomponents",
     "versions": ["1.24.0", "2.0.0"]
   },
   "components": {

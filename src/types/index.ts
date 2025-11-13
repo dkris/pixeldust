@@ -20,7 +20,7 @@ export interface Config {
 }
 
 export interface FrameworkConfig {
-  name: 'ui5-webcomponents' | string;
+  name: '@ui5/webcomponents' | string;
   versions: string[];
 }
 

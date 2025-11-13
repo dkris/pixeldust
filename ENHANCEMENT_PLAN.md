@@ -82,7 +82,7 @@ export class ApplicationLoaderAgent extends BaseAgent {
     "port": 3000                           // App port
   },
   "framework": {
-    "name": "ui5-webcomponents",
+    "name": "@ui5/webcomponents",
     "versions": ["1.24.0", "2.0.0"]
   }
 }
@@ -398,7 +398,7 @@ cat > .pixeldustrc.json <<EOF
     "port": 8080
   },
   "framework": {
-    "name": "ui5-webcomponents",
+    "name": "@ui5/webcomponents",
     "versions": ["1.24.0", "2.0.0"]
   },
   "upgrade": {

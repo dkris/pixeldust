@@ -20,7 +20,7 @@ Update your `.pixeldustrc.json`:
 ```json
 {
   "framework": {
-    "name": "ui5-webcomponents",
+    "name": "@ui5/webcomponents",
     "versions": ["1.24.0", "2.0.0"]
   },
   "application": {
@@ -120,7 +120,7 @@ pixeldust test --config .pixeldustrc.json
 cat > .pixeldustrc.json <<EOF
 {
   "framework": {
-    "name": "ui5-webcomponents",
+    "name": "@ui5/webcomponents",
     "versions": ["1.24.0", "2.0.0"]
   },
   "application": {
@@ -166,7 +166,7 @@ pixeldust approve <session-id> <remediation-id>
 ```json
 {
   "dependencies": {
-    "ui5-webcomponents": "2.0.0",  // ← Upgraded
+    "@ui5/webcomponents": "2.0.0",  // ← Upgraded
     "@ui5/webcomponents-base": "2.0.0",  // ← Peer dep updated
     "@ui5/webcomponents-theming": "2.0.0"  // ← Peer dep updated
   }

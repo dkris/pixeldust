@@ -38,7 +38,7 @@ Edit `.pixeldustrc.json`:
 ```json
 {
   "framework": {
-    "name": "ui5-webcomponents",
+    "name": "@ui5/webcomponents",
     "versions": ["1.24.0", "2.0.0"]
   },
   "containers": {
@@ -174,7 +174,7 @@ pixeldust init
 cat > .pixeldustrc.json << 'EOF'
 {
   "framework": {
-    "name": "ui5-webcomponents",
+    "name": "@ui5/webcomponents",
     "versions": ["1.24.0", "2.0.0"]
   },
   "components": {

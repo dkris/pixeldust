@@ -72,7 +72,7 @@ Cmd: [
 ```bash
 # In YOUR application:
 1. Update package.json
-   "ui5-webcomponents": "2.0.0"
+   "@ui5/webcomponents": "2.0.0"
 
 2. Update peer dependencies if needed
 
