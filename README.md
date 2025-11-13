@@ -228,65 +228,267 @@ pixeldust approve <session-id> <remediation-id>
 
 ## CLI Commands
 
+PixelDust provides a comprehensive command-line interface for managing UI version testing workflows.
+
 ### `pixeldust init`
 Initialize a new PixelDust configuration file.
+
+Creates a `.pixeldustrc.json` file in the current directory with default settings.
 
 **Options:**
 - `-f, --force`: Overwrite existing configuration
 
-**Example:**
+**Examples:**
 ```bash
+# Create new configuration
+pixeldust init
+
+# Force overwrite existing configuration
 pixeldust init --force
 ```
 
 ### `pixeldust test`
-Run UI version testing.
+Run UI version testing for the configured framework versions.
 
 **Options:**
-- `-c, --config <path>`: Path to configuration file
-- `-v, --versions <versions>`: Comma-separated list of versions
+- `-c, --config <path>`: Path to configuration file (default: searches for .pixeldustrc.json)
+- `-v, --versions <versions>`: Comma-separated list of versions to test (overrides config)
+- `--skip-browser-check`: Skip Playwright browser installation check
 
-**Example:**
+**Examples:**
 ```bash
-pixeldust test --versions 1.0.0,2.0.0,3.0.0
+# Run with default configuration
+pixeldust test
+
+# Use specific config file
+pixeldust test --config ./configs/ui5-test.json
+
+# Test specific versions only
+pixeldust test --versions 1.24.0,2.0.0,2.16.0
+
+# Skip browser check (useful in CI/CD)
+pixeldust test --skip-browser-check
 ```
 
-### `pixeldust resume <session-id>`
-Resume a previous testing session.
+**Prerequisites:**
+- Playwright browsers must be installed: `npx playwright install chromium`
+- ANTHROPIC_API_KEY or OPENAI_API_KEY must be set
 
-**Example:**
+### `pixeldust resume <session-id>`
+Resume a previous testing session from where it left off.
+
+Useful when a session is interrupted or requires manual intervention.
+
+**Arguments:**
+- `<session-id>`: The UUID of the session to resume
+
+**Examples:**
 ```bash
+# Resume a specific session
 pixeldust resume abc123-def456-ghi789
+
+# Find session ID first, then resume
+pixeldust list
+pixeldust resume 550e8400-e29b-41d4-a716-446655440000
 ```
 
 ### `pixeldust list`
-List all testing sessions.
+List all testing sessions with their current state and metadata.
 
 **Options:**
-- `-n, --limit <number>`: Number of sessions to show (default: 10)
+- `-n, --limit <number>`: Maximum number of sessions to display (default: 10)
 
-**Example:**
+**Examples:**
 ```bash
-pixeldust list --limit 20
+# Show last 10 sessions
+pixeldust list
+
+# Show last 50 sessions
+pixeldust list --limit 50
+```
+
+**Output:**
+```
+Recent Sessions:
+
+ID                                   | State              | Versions | Created
+----------------------------------------------------------------------------------------------------
+550e8400-e29b-41d4-a716-446655440000 | COMPLETED          | 1.24.0,2 | 2025-11-13
+6ba7b810-9dad-11d1-80b4-00c04fd430c8 | FAILED             | 2.0.0,2. | 2025-11-12
 ```
 
 ### `pixeldust report <session-id>`
-Generate a report for a session.
+Generate a comprehensive report for a completed session.
+
+**Arguments:**
+- `<session-id>`: The UUID of the session
 
 **Options:**
-- `-f, --format <format>`: Report format (markdown, html, json)
+- `-f, --format <format>`: Report format - `markdown`, `html`, or `json` (default: markdown)
 
-**Example:**
+**Examples:**
 ```bash
-pixeldust report abc123 --format html
+# Generate markdown report
+pixeldust report abc123-def456
+
+# Generate HTML report
+pixeldust report abc123-def456 --format html
+
+# Generate JSON report for programmatic use
+pixeldust report abc123-def456 --format json
 ```
 
-### `pixeldust approve <session-id> <remediation-id>`
-Approve a remediation proposal and continue implementation.
+**Output:**
+Reports are saved to the configured `reporting.outputPath` directory.
 
-**Example:**
+### `pixeldust show-tests <session-id>`
+Display or export the generated Playwright test code from a session.
+
+**Arguments:**
+- `<session-id>`: The UUID of the session
+
+**Options:**
+- `-c, --component <component>`: Filter tests by component name
+- `-e, --export <path>`: Export tests to a directory instead of displaying
+
+**Examples:**
 ```bash
-pixeldust approve abc123 rem456
+# Show all generated tests
+pixeldust show-tests abc123-def456
+
+# Show tests for specific component
+pixeldust show-tests abc123-def456 --component ui5-button
+
+# Export all tests to files
+pixeldust show-tests abc123-def456 --export ./playwright-tests
+
+# Export tests for specific component
+pixeldust show-tests abc123-def456 --component ui5-button --export ./tests
+```
+
+**Output Structure (when using --export):**
+```
+./playwright-tests/
+├── ui5-button/
+│   ├── functional-1.spec.ts
+│   ├── visual-1.spec.ts
+│   └── accessibility-1.spec.ts
+├── ui5-input/
+│   ├── functional-1.spec.ts
+│   └── visual-1.spec.ts
+```
+
+### `pixeldust show-evaluation <session-id>`
+Display detailed evaluation feedback and recommendations from the AI analysis.
+
+Shows test quality metrics, comparison quality, strengths, weaknesses, and actionable recommendations for improvement.
+
+**Arguments:**
+- `<session-id>`: The UUID of the session
+
+**Examples:**
+```bash
+# View evaluation for a session
+pixeldust show-evaluation abc123-def456
+```
+
+**Output Includes:**
+- Overall quality score
+- Test quality metrics (success rate, coverage, duration)
+- Comparison quality metrics (precision, recall, accuracy)
+- Remediation effectiveness (if applicable)
+- Strengths and weaknesses analysis
+- Prioritized recommendations
+- Prompt improvement suggestions
+- Configuration suggestions
+
+### `pixeldust show-diff <session-id>`
+Launch an interactive web-based diff viewer to explore visual and DOM differences.
+
+**Arguments:**
+- `<session-id>`: The UUID of the session
+
+**Options:**
+- `-p, --port <port>`: Port to run web server on (default: 3000)
+- `--no-open`: Don't open browser automatically
+
+**Examples:**
+```bash
+# Start diff viewer (opens browser automatically)
+pixeldust show-diff abc123-def456
+
+# Use custom port
+pixeldust show-diff abc123-def456 --port 8080
+
+# Start server without opening browser
+pixeldust show-diff abc123-def456 --no-open
+```
+
+**Features:**
+- Side-by-side visual comparison with slider
+- DOM diff viewer with syntax highlighting
+- Screenshot carousel with zoom
+- Filter by version, component, or test
+- Export individual comparisons
+
+**Controls:**
+- Press `Ctrl+C` to stop the server
+
+### `pixeldust approve <session-id> <remediation-id>`
+Approve a specific remediation proposal and continue with implementation.
+
+Once approved, the system will automatically apply the remediation, commit changes, and re-run tests.
+
+**Arguments:**
+- `<session-id>`: The UUID of the session
+- `<remediation-id>`: The ID of the remediation to approve
+
+**Examples:**
+```bash
+# Approve a remediation
+pixeldust approve abc123-def456 rem-789
+
+# View remediations first, then approve
+pixeldust show-evaluation abc123-def456
+pixeldust approve abc123-def456 rem-specific-id
+```
+
+**What Happens After Approval:**
+1. System creates a feature branch
+2. Applies the remediation code changes
+3. Commits changes with descriptive message
+4. Re-runs tests to verify the fix
+5. Reports results
+
+---
+
+## Command Cheat Sheet
+
+```bash
+# Initial Setup
+pixeldust init                              # Create config file
+export ANTHROPIC_API_KEY="sk-..."          # Set API key
+npx playwright install chromium             # Install browsers
+
+# Run Tests
+pixeldust test                              # Run with default config
+pixeldust test -v 1.24.0,2.0.0             # Test specific versions
+pixeldust test -c custom-config.json       # Use custom config
+
+# View Results
+pixeldust list                              # List all sessions
+pixeldust show-evaluation <session-id>      # View AI feedback
+pixeldust show-diff <session-id>            # Open web diff viewer
+pixeldust show-tests <session-id>           # View generated tests
+pixeldust report <session-id> -f html       # Generate HTML report
+
+# Work with Sessions
+pixeldust resume <session-id>               # Resume interrupted session
+pixeldust approve <session-id> <rem-id>     # Approve remediation
+
+# Export
+pixeldust show-tests <sid> -e ./tests       # Export test files
+pixeldust report <sid> -f json > out.json   # Export JSON report
 ```
 
 ## Configuration
