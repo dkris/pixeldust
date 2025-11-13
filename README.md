@@ -43,7 +43,10 @@ PixelDust is an AI-powered testing system that automatically:
 - ✅ **Intelligent Remediation**: AI proposes code fixes with confidence scores
 - ✅ **Visual Regression**: Pixel-perfect comparison with detailed diffs
 - ✅ **Multi-Agent System**: 12 specialized agents working together
+- ✅ **Hybrid Architecture**: Pipeline-based workflow with event-driven monitoring
 - ✅ **Continuous Improvement**: Evaluation agent provides feedback after each session
+- ✅ **Real-Time Feedback**: Streaming progress and quality alerts during execution
+- ✅ **Interactive Diff Viewer**: Browser-based UI for reviewing comparisons
 - ✅ **Native Podman Support**: Rootless containers for enhanced security
 
 **Complete Workflow:**
@@ -56,6 +59,31 @@ PixelDust is an AI-powered testing system that automatically:
 7. 📊 Generate comprehensive reports
 
 ## Architecture
+
+### Hybrid Architecture: Pipeline Core + Event Layer
+
+PixelDust uses a **Hybrid Architecture** combining:
+- **Pipeline Layer**: Structured workflow execution with clear dependencies
+- **Event Layer**: Real-time monitoring, evaluation, and feedback
+
+See [HYBRID_ARCHITECTURE.md](./HYBRID_ARCHITECTURE.md) for detailed documentation.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      PIPELINE LAYER                          │
+│  [Discover] → [Generate] → [Execute] → [Analyze] → [Eval]  │
+│       │           │            │           │                 │
+│       └───────────┴────────────┴───────────┘                │
+│                    │ (Emits events)                          │
+└────────────────────┼─────────────────────────────────────────┘
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       EVENT LAYER                            │
+│  Event Bus → [Continuous Evaluation] [Metrics] [Alerts]    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Traditional View
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -72,10 +100,10 @@ PixelDust is an AI-powered testing system that automatically:
 │                            │                                         │
 │                            ▼                                         │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │         ORCHESTRATOR AGENT (Claude)                          │  │
-│  │  • Coordinates all agents                                    │  │
-│  │  • Maintains state machine                                   │  │
-│  │  • Makes high-level decisions                               │  │
+│  │         HYBRID ORCHESTRATOR (Pipeline + Events)              │  │
+│  │  • Executes pipeline stages in dependency order             │  │
+│  │  • Emits events for real-time monitoring                    │  │
+│  │  • Enables continuous evaluation                            │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │         │              │              │              │               │
 │    ┌────┴────┐    ┌────┴────┐   ┌────┴────┐   ┌────┴────┐         │
