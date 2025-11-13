@@ -1,4 +1,4 @@
-![helix-architecture](https://github.com/user-attachments/assets/8941f4c1-195b-4d01-a2cc-b8232f80d512)# PixelDust - Agentic UI Version Testing System
+# PixelDust - Agentic UI Version Testing System
 
 An intelligent, multi-agent system for automated UI version testing, visual regression detection, and autonomous remediation.
 
