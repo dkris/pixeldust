@@ -24,6 +24,11 @@ const AGENT_EVENT_MAP: Record<
     completed: EventType.STAGE_COMPLETED,
     failed: EventType.STAGE_FAILED,
   },
+  [AgentType.WORKFLOW_DISCOVERY]: {
+    started: EventType.STAGE_STARTED,
+    completed: EventType.STAGE_COMPLETED,
+    failed: EventType.STAGE_FAILED,
+  },
   [AgentType.TEST_GENERATION]: {
     started: EventType.TEST_GENERATION_STARTED,
     completed: EventType.TEST_GENERATION_COMPLETED,
@@ -80,7 +85,8 @@ const STATE_DEPENDENCY_MAP: Record<SessionState, string[]> = {
   [SessionState.INITIALIZING]: [],
   [SessionState.APPLICATION_LOADING]: ['INITIALIZING'],
   [SessionState.ENVIRONMENT_SETUP]: ['APPLICATION_LOADING'],
-  [SessionState.TEST_GENERATION]: ['ENVIRONMENT_SETUP'],
+  [SessionState.WORKFLOW_DISCOVERY]: ['APPLICATION_LOADING', 'ENVIRONMENT_SETUP'],
+  [SessionState.TEST_GENERATION]: ['ENVIRONMENT_SETUP', 'WORKFLOW_DISCOVERY'],
   [SessionState.TEST_EXECUTION]: ['TEST_GENERATION'],
   [SessionState.ANALYSIS]: ['TEST_EXECUTION'],
   [SessionState.DEPENDENCY_UPGRADE]: ['ANALYSIS'],

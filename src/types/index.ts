@@ -116,6 +116,7 @@ export enum SessionState {
   INITIALIZING = 'INITIALIZING',
   APPLICATION_LOADING = 'APPLICATION_LOADING',
   ENVIRONMENT_SETUP = 'ENVIRONMENT_SETUP',
+  WORKFLOW_DISCOVERY = 'WORKFLOW_DISCOVERY',
   TEST_GENERATION = 'TEST_GENERATION',
   TEST_EXECUTION = 'TEST_EXECUTION',
   ANALYSIS = 'ANALYSIS',
@@ -148,6 +149,7 @@ export enum AgentType {
   ORCHESTRATOR = 'ORCHESTRATOR',
   APPLICATION_LOADER = 'APPLICATION_LOADER',
   ENVIRONMENT = 'ENVIRONMENT',
+  WORKFLOW_DISCOVERY = 'WORKFLOW_DISCOVERY',
   TEST_GENERATION = 'TEST_GENERATION',
   EXECUTION = 'EXECUTION',
   ANALYSIS = 'ANALYSIS',
@@ -402,6 +404,133 @@ export enum ContainerStatus {
   RUNNING = 'RUNNING',
   STOPPED = 'STOPPED',
   ERROR = 'ERROR',
+}
+
+// ============================================================================
+// Workflow Discovery Types
+// ============================================================================
+
+/**
+ * Represents a discovered page in the application
+ */
+export interface Page {
+  /** URL/route of the page */
+  url: string;
+  /** Page title */
+  title: string;
+  /** Components found on this page */
+  components: PageComponent[];
+  /** Interactive elements (buttons, links, forms) */
+  interactiveElements: InteractiveElement[];
+  /** Links to other pages */
+  links: string[];
+  /** Screenshot of the page */
+  screenshot?: string;
+  /** When this page was discovered */
+  discoveredAt: Date;
+}
+
+/**
+ * Component usage on a specific page
+ */
+export interface PageComponent {
+  /** Component tag name (e.g., ui5-button) */
+  tag: string;
+  /** Number of instances on the page */
+  count: number;
+  /** CSS selectors for instances */
+  selectors: string[];
+  /** Whether component is visible on initial load */
+  visible: boolean;
+  /** Component attributes */
+  attributes?: Record<string, string>;
+}
+
+/**
+ * Interactive element that can be part of a workflow
+ */
+export interface InteractiveElement {
+  /** Type of element */
+  type: 'button' | 'link' | 'input' | 'form' | 'select' | 'other';
+  /** CSS selector */
+  selector: string;
+  /** Text content or label */
+  text?: string;
+  /** Target URL for links */
+  href?: string;
+  /** Action performed (e.g., "submit", "navigate") */
+  action?: string;
+  /** Component tag if it's a web component */
+  componentTag?: string;
+}
+
+/**
+ * User workflow - sequence of pages and interactions
+ */
+export interface Workflow {
+  /** Unique workflow identifier */
+  id: string;
+  /** Workflow name/description */
+  name: string;
+  /** Starting page */
+  startPage: string;
+  /** Sequence of steps in the workflow */
+  steps: WorkflowStep[];
+  /** Components involved in this workflow */
+  components: string[];
+  /** Estimated workflow priority (based on link depth, etc.) */
+  priority: 'high' | 'medium' | 'low';
+}
+
+/**
+ * A step in a user workflow
+ */
+export interface WorkflowStep {
+  /** Step sequence number */
+  order: number;
+  /** Page URL */
+  page: string;
+  /** Action to perform */
+  action?: {
+    type: 'click' | 'input' | 'submit' | 'navigate' | 'wait';
+    selector?: string;
+    value?: string;
+    description: string;
+  };
+  /** Expected outcome */
+  expectedOutcome?: string;
+}
+
+/**
+ * Complete workflow discovery result
+ */
+export interface WorkflowDiscoveryResult {
+  /** All discovered pages */
+  pages: Page[];
+  /** All discovered workflows */
+  workflows: Workflow[];
+  /** Component usage summary */
+  componentUsage: ComponentUsageSummary[];
+  /** Discovery timestamp */
+  discoveredAt: Date;
+  /** Application URL that was crawled */
+  applicationUrl: string;
+}
+
+/**
+ * Summary of how a component is used across the application
+ */
+export interface ComponentUsageSummary {
+  /** Component tag name */
+  tag: string;
+  /** Total number of pages using this component */
+  pageCount: number;
+  /** Total instances across all pages */
+  totalInstances: number;
+  /** Pages where this component appears */
+  pages: string[];
+  /** Common usage patterns */
+  patterns: string[];
 }
 
 // ============================================================================

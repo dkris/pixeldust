@@ -3,6 +3,7 @@ import { AgentType, AgentContext, AgentResult, SessionState, Session } from '../
 import { DatabaseManager } from '../storage/database';
 import { ApplicationLoaderAgent } from './application-loader-agent';
 import { EnvironmentAgent } from './environment-agent';
+import { WorkflowDiscoveryAgent } from './workflow-discovery-agent';
 import { TestGenerationAgent } from './test-generation-agent';
 import { ExecutionAgent } from './execution-agent';
 import { AnalysisAgent } from './analysis-agent';
@@ -36,6 +37,7 @@ export class OrchestratorAgent extends BaseAgent {
   private initializeAgents() {
     this.agents.set(AgentType.APPLICATION_LOADER, new ApplicationLoaderAgent());
     this.agents.set(AgentType.ENVIRONMENT, new EnvironmentAgent());
+    this.agents.set(AgentType.WORKFLOW_DISCOVERY, new WorkflowDiscoveryAgent());
     this.agents.set(AgentType.TEST_GENERATION, new TestGenerationAgent());
     this.agents.set(AgentType.EXECUTION, new ExecutionAgent());
     this.agents.set(AgentType.ANALYSIS, new AnalysisAgent());
@@ -66,6 +68,9 @@ export class OrchestratorAgent extends BaseAgent {
 
         case SessionState.ENVIRONMENT_SETUP:
           return this.handleEnvironmentSetup(context);
+
+        case SessionState.WORKFLOW_DISCOVERY:
+          return this.handleWorkflowDiscovery(context);
 
         case SessionState.TEST_GENERATION:
           return this.handleTestGeneration(context);
@@ -155,9 +160,10 @@ export class OrchestratorAgent extends BaseAgent {
       return this.failure(result.error!, SessionState.ERROR);
     }
 
+    // After loading application, discover workflows
     return this.success(
       result.data,
-      SessionState.TEST_GENERATION
+      SessionState.WORKFLOW_DISCOVERY
     );
   }
 
@@ -170,6 +176,25 @@ export class OrchestratorAgent extends BaseAgent {
     if (!result.success) {
       return this.failure(result.error!, SessionState.ERROR);
     }
+
+    // Framework-only mode skips workflow discovery
+    return this.success(
+      result.data,
+      SessionState.TEST_GENERATION
+    );
+  }
+
+  private async handleWorkflowDiscovery(context: AgentContext): Promise<AgentResult> {
+    this.logger.info('Discovering workflows');
+
+    const workflowAgent = this.agents.get(AgentType.WORKFLOW_DISCOVERY)!;
+    const result = await workflowAgent.execute(context);
+
+    if (!result.success) {
+      return this.failure(result.error!, SessionState.ERROR);
+    }
+
+    this.logger.info(`Workflow discovery complete: ${result.data?.pages?.length || 0} pages, ${result.data?.workflows?.length || 0} workflows`);
 
     return this.success(
       result.data,

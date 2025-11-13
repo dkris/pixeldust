@@ -24,15 +24,21 @@ export class TestGenerationAgent extends BaseAgent {
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session } = context;
+    const { config, session, data } = context;
 
     try {
       this.logger.info('Generating test suites');
 
       const testSuites: TestSuite[] = [];
 
+      // Check if workflow data is available
+      const workflowData = data?.pages && data?.workflows ? data : null;
+      if (workflowData) {
+        this.logger.info(`Using workflow data: ${workflowData.pages.length} pages, ${workflowData.workflows.length} workflows`);
+      }
+
       // Get list of components to test
-      const components = await this.discoverComponents(config);
+      const components = await this.discoverComponents(config, workflowData);
 
       // Filter out empty or invalid component names
       const validComponents = components.filter(c => c && c.trim().length > 0);
@@ -46,7 +52,7 @@ export class TestGenerationAgent extends BaseAgent {
       for (const component of validComponents) {
         this.logger.info(`Generating tests for component: ${component}`);
 
-        const tests = await this.generateTestsForComponent(component, config);
+        const tests = await this.generateTestsForComponent(component, config, workflowData);
 
         const testSuite: TestSuite = {
           id: uuidv4(),
@@ -71,11 +77,17 @@ export class TestGenerationAgent extends BaseAgent {
     }
   }
 
-  private async discoverComponents(config: any): Promise<string[]> {
+  private async discoverComponents(config: any, workflowData: any = null): Promise<string[]> {
     let components: string[] = [];
 
-    // Priority 1: Auto-detect from application code if available
-    if (config.application?.path) {
+    // Priority 1: Use components from workflow discovery if available
+    if (workflowData?.componentUsage && workflowData.componentUsage.length > 0) {
+      this.logger.info(`Using components discovered from workflow analysis`);
+      components = workflowData.componentUsage.map((usage: any) => usage.tag);
+      this.logger.info(`Discovered ${components.length} components from workflows: ${components.join(', ')}`);
+    }
+    // Priority 2: Auto-detect from application code if available
+    else if (config.application?.path) {
       this.logger.info(`Auto-detecting components from application source: ${config.application.path}`);
       components = await this.scanApplicationForComponents(config.application.path, config.framework.name);
       this.logger.info(`Discovered ${components.length} components from source files: ${components.join(', ')}`);
@@ -94,13 +106,13 @@ export class TestGenerationAgent extends BaseAgent {
         components = this.getDefaultComponents();
       }
     }
-    // Priority 2: Use explicitly included components if specified (framework-only mode)
+    // Priority 3: Use explicitly included components if specified (framework-only mode)
     else if (config.components?.include && config.components.include.length > 0) {
       this.logger.info('Using explicitly included components (framework-only mode)');
       components = config.components.include;
       this.logger.debug(`Included components: ${JSON.stringify(components)}`);
     }
-    // Priority 3: Use default component list
+    // Priority 4: Use default component list
     else {
       this.logger.info('Using default component list (framework-only mode)');
       components = this.getDefaultComponents();
@@ -277,17 +289,61 @@ export class TestGenerationAgent extends BaseAgent {
     return prefixMap[frameworkName] || 'ui5';
   }
 
-  private async generateTestsForComponent(component: string, config: any): Promise<Test[]> {
+  private async generateTestsForComponent(component: string, config: any, workflowData: any = null): Promise<Test[]> {
     // Determine if we're in application mode or framework-only mode
     const isApplicationMode = !!config.application;
 
     let prompt: string;
 
     if (isApplicationMode) {
-      // Application-aware test generation
+      // Build workflow context if available
+      let workflowContext = '';
+      if (workflowData) {
+        const componentUsage = workflowData.componentUsage?.find((u: any) => u.tag === component);
+        const relevantWorkflows = workflowData.workflows?.filter((w: any) =>
+          w.components.includes(component)
+        ) || [];
+        const relevantPages = workflowData.pages?.filter((p: any) =>
+          p.components.some((c: any) => c.tag === component)
+        ) || [];
+
+        if (componentUsage || relevantWorkflows.length > 0 || relevantPages.length > 0) {
+          workflowContext = `\n\nWORKFLOW CONTEXT (discovered from application):`;
+
+          if (componentUsage) {
+            workflowContext += `\n- ${component} is used on ${componentUsage.pageCount} page(s): ${componentUsage.pages.join(', ')}`;
+            workflowContext += `\n- Total instances: ${componentUsage.totalInstances}`;
+            if (componentUsage.patterns.length > 0) {
+              workflowContext += `\n- Common patterns: ${componentUsage.patterns.join(', ')}`;
+            }
+          }
+
+          if (relevantPages.length > 0) {
+            workflowContext += `\n\nPages containing ${component}:`;
+            relevantPages.slice(0, 3).forEach((page: any) => {
+              const comp = page.components.find((c: any) => c.tag === component);
+              workflowContext += `\n- "${page.title}" (${page.url}): ${comp.count} instance(s)`;
+            });
+          }
+
+          if (relevantWorkflows.length > 0) {
+            workflowContext += `\n\nRelevant Workflows:`;
+            relevantWorkflows.slice(0, 2).forEach((workflow: any) => {
+              workflowContext += `\n- "${workflow.name}" (Priority: ${workflow.priority})`;
+              workflow.steps.slice(0, 3).forEach((step: any) => {
+                if (step.action) {
+                  workflowContext += `\n  ${step.order}. ${step.action.description}`;
+                }
+              });
+            });
+          }
+        }
+      }
+
+      // Application-aware test generation with workflow context
       prompt = `Generate comprehensive test scenarios for the "${component}" web component IN THE CONTEXT of a real application.
 
-IMPORTANT: These tests will run against the actual application at ${config.application.path}, NOT standalone components.
+IMPORTANT: These tests will run against the actual application at ${config.application.path}, NOT standalone components.${workflowContext}
 
 Generate tests in the following categories with balanced distribution:
 1. Functional tests (40%) - Test how ${component} works within the application's features
@@ -314,7 +370,7 @@ For each test, provide:
 - A unique descriptive name (kebab-case) that reflects the application context
 - Clear description of what application functionality is being tested
 - Category that matches one of the four above
-- Complete Playwright test code that navigates the actual application
+- Complete Playwright test code that navigates to the actual pages where the component is used
 
 Example test names:
 - "${component}-login-form-submission" (not just "button-click")
