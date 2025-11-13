@@ -74,26 +74,35 @@ export class TestGenerationAgent extends BaseAgent {
   private async discoverComponents(config: any): Promise<string[]> {
     let components: string[] = [];
 
-    // Priority 1: Use explicitly included components if specified
-    if (config.components?.include && config.components.include.length > 0) {
-      this.logger.info('Using explicitly included components');
-      components = config.components.include;
-      this.logger.debug(`Included components: ${JSON.stringify(components)}`);
-    }
-    // Priority 2: Auto-detect from application code if available
-    else if (config.application?.path) {
-      this.logger.info(`Auto-detecting components from application code: ${config.application.path}`);
+    // Priority 1: Auto-detect from application code if available
+    if (config.application?.path) {
+      this.logger.info(`Auto-detecting components from application source: ${config.application.path}`);
       components = await this.scanApplicationForComponents(config.application.path, config.framework.name);
-      this.logger.debug(`Scanned components: ${JSON.stringify(components)}`);
+      this.logger.info(`Discovered ${components.length} components from source files: ${components.join(', ')}`);
 
+      // Merge with explicitly included components if specified
+      if (config.components?.include && config.components.include.length > 0) {
+        const explicitComponents = config.components.include;
+        const merged = new Set([...components, ...explicitComponents]);
+        components = Array.from(merged);
+        this.logger.info(`Merged with ${explicitComponents.length} explicitly included components`);
+      }
+
+      // If no components found, fall back to defaults
       if (components.length === 0) {
         this.logger.warn('No components detected in application, falling back to default list');
         components = this.getDefaultComponents();
       }
     }
+    // Priority 2: Use explicitly included components if specified (framework-only mode)
+    else if (config.components?.include && config.components.include.length > 0) {
+      this.logger.info('Using explicitly included components (framework-only mode)');
+      components = config.components.include;
+      this.logger.debug(`Included components: ${JSON.stringify(components)}`);
+    }
     // Priority 3: Use default component list
     else {
-      this.logger.info('Using default component list');
+      this.logger.info('Using default component list (framework-only mode)');
       components = this.getDefaultComponents();
     }
 
@@ -142,14 +151,24 @@ export class TestGenerationAgent extends BaseAgent {
 
       // Patterns to search for based on file type
       const patterns = [
-        // HTML/JSX/TSX: <ui5-button>, <ui5-table>
-        new RegExp(`<(${componentPrefix}-[a-z0-9-]+)`, 'gi'),
-        // JavaScript/TypeScript imports: import "@ui5/webcomponents/dist/Button.js"
-        new RegExp(`import.*["']@ui5/webcomponents(?:-[a-z]+)?/dist/([A-Z][a-zA-Z]+)\\.js["']`, 'gi'),
+        // HTML/JSX/TSX tags: <ui5-button>, <ui5-button />, <ui5-table>
+        new RegExp(`<(${componentPrefix}-[a-z0-9-]+)(?:\\s|/|>)`, 'gi'),
+
+        // ES6 imports: import "@ui5/webcomponents/dist/Button.js"
+        new RegExp(`import\\s+["']@ui5/webcomponents(?:-[a-z]+)?/dist/([A-Z][a-zA-Z0-9]+)(?:\\.js)?["']`, 'gi'),
+
+        // Dynamic imports: import("@ui5/webcomponents/dist/Button.js")
+        new RegExp(`import\\s*\\(\\s*["']@ui5/webcomponents(?:-[a-z]+)?/dist/([A-Z][a-zA-Z0-9]+)(?:\\.js)?["']\\s*\\)`, 'gi'),
+
+        // Named imports: import { Button } from "@ui5/webcomponents"
+        new RegExp(`import\\s+\\{[^}]*\\b([A-Z][a-zA-Z0-9]+)\\b[^}]*\\}\\s+from\\s+["']@ui5/webcomponents`, 'gi'),
+
+        // Require statements: require("@ui5/webcomponents/dist/Button.js")
+        new RegExp(`require\\s*\\(\\s*["']@ui5/webcomponents(?:-[a-z]+)?/dist/([A-Z][a-zA-Z0-9]+)(?:\\.js)?["']\\s*\\)`, 'gi'),
       ];
 
       // File extensions to scan
-      const extensions = ['.html', '.js', '.ts', '.jsx', '.tsx', '.vue', '.svelte'];
+      const extensions = ['.html', '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs', '.vue', '.svelte'];
 
       // Recursively scan application directory
       await this.scanDirectory(appPath, extensions, patterns, components, componentPrefix);
@@ -180,7 +199,11 @@ export class TestGenerationAgent extends BaseAgent {
 
         // Skip common directories to ignore
         if (entry.isDirectory()) {
-          const skipDirs = ['node_modules', 'dist', 'build', '.git', 'coverage', 'public'];
+          const skipDirs = [
+            'node_modules', 'dist', 'build', '.git', 'coverage', 'public',
+            '.next', '.nuxt', '.cache', 'out', 'target', 'vendor',
+            '__pycache__', '.venv', 'venv', '.tox', '.pytest_cache'
+          ];
           if (skipDirs.includes(entry.name)) {
             continue;
           }
