@@ -255,88 +255,91 @@ export class TestGenerationAgent extends BaseAgent {
   }
 
   private async generateTestsForComponent(component: string, config: any): Promise<Test[]> {
-    const prompt = `You are an expert in UI testing and Playwright. Generate comprehensive test scenarios for the "${component}" web component.
+    const prompt = `Generate comprehensive test scenarios for the "${component}" web component.
 
 Generate tests in the following categories:
 1. Functional tests (user interactions, state changes)
 2. Visual tests (screenshot capture at different states)
 3. Accessibility tests (ARIA attributes, keyboard navigation)
-4. Performance tests (rendering metrics)
 
 For each test, provide:
-- A unique name
-- Description
-- Playwright test code
+- A unique descriptive name (kebab-case)
+- Clear description of what the test does
+- Complete Playwright test code
 
 The component will be tested across multiple versions, so focus on core functionality that should remain consistent.
 
-IMPORTANT: Return ONLY a valid JSON array. Escape all special characters in the code strings. Use \\n for newlines, \\" for quotes.
-
-Return the tests as a JSON array with this exact structure:
-[
-  {
-    "name": "test name",
-    "description": "what this test does",
-    "category": "FUNCTIONAL",
-    "code": "import { test, expect } from '@playwright/test';\\n\\ntest('test name', async ({ page }) => {\\n  await page.goto('/');\\n  const element = await page.locator('${component}');\\n  await expect(element).toBeVisible();\\n});"
-  }
-]
-
-Focus on creating robust, maintainable tests that can detect breaking changes between versions.
-
-Return ONLY the JSON array, no explanation or markdown.`;
+Generate 4-6 comprehensive tests that cover the most important aspects of this component.`;
 
     try {
       const response = await this.ai.messages.create({
         model: config.ai.model,
         max_tokens: config.ai.maxTokens || 8192,
-        temperature: 0.3, // Lower temperature for more consistent JSON
+        temperature: 0.3, // Lower temperature for more consistent output
         messages: [
           {
             role: 'user',
             content: prompt,
           },
         ],
+        tools: [
+          {
+            name: 'generate_tests',
+            description: 'Generate Playwright test cases for a UI component',
+            input_schema: {
+              type: 'object',
+              properties: {
+                tests: {
+                  type: 'array',
+                  description: 'Array of test cases',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: {
+                        type: 'string',
+                        description: 'Test name in kebab-case (e.g., button-renders-with-text)',
+                      },
+                      description: {
+                        type: 'string',
+                        description: 'What this test verifies',
+                      },
+                      category: {
+                        type: 'string',
+                        enum: ['FUNCTIONAL', 'VISUAL', 'ACCESSIBILITY', 'PERFORMANCE'],
+                        description: 'Test category',
+                      },
+                      code: {
+                        type: 'string',
+                        description: 'Complete Playwright test code',
+                      },
+                    },
+                    required: ['name', 'description', 'category', 'code'],
+                  },
+                },
+              },
+              required: ['tests'],
+            },
+          },
+        ],
+        tool_choice: { type: 'tool', name: 'generate_tests' },
       });
 
-      const content = response.content[0];
-      if (content.type !== 'text') {
-        throw new Error('Unexpected response type from AI');
+      // Find the tool use block in the response
+      const toolUseBlock = response.content.find(block => block.type === 'tool_use');
+
+      if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
+        this.logger.warn(`No tool_use block found in AI response for ${component}`);
+        throw new Error('AI did not use the generate_tests tool');
       }
 
-      // Try to extract JSON from response
-      let jsonText = content.text.trim();
+      const testsData = toolUseBlock.input as { tests: any[] };
 
-      // Remove markdown code blocks if present
-      if (jsonText.startsWith('```')) {
-        const codeBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-        if (codeBlockMatch) {
-          jsonText = codeBlockMatch[1].trim();
-        }
+      if (!testsData.tests || !Array.isArray(testsData.tests)) {
+        this.logger.error(`Invalid tool input structure for ${component}`);
+        throw new Error('Tool input does not contain tests array');
       }
 
-      // Try to find JSON array in the text
-      const jsonMatch = jsonText.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) {
-        this.logger.warn(`Could not extract JSON array from AI response for ${component}`);
-        this.logger.debug(`AI response (first 1000 chars): ${jsonText.substring(0, 1000)}`);
-        throw new Error('Could not extract JSON from AI response');
-      }
-
-      let testsData;
-      try {
-        testsData = JSON.parse(jsonMatch[0]);
-      } catch (parseError: any) {
-        this.logger.error(`JSON parse error for ${component}: ${parseError.message}`);
-        this.logger.debug(`Attempted to parse: ${jsonMatch[0].substring(0, 500)}...`);
-        throw new Error(`Failed to parse JSON: ${parseError.message}`);
-      }
-
-      if (!Array.isArray(testsData)) {
-        throw new Error('AI response is not a JSON array');
-      }
-
-      const tests = testsData.map((t: any) => ({
+      const tests = testsData.tests.map((t: any) => ({
         id: uuidv4(),
         name: t.name || `${component} test`,
         description: t.description || 'Test description',
