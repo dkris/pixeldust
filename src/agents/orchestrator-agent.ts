@@ -240,6 +240,25 @@ export class OrchestratorAgent extends BaseAgent {
     if (result.data?.results) {
       for (const testResult of result.data.results) {
         this.db.saveTestResult(testResult);
+
+        // Create and save snapshots from test results
+        for (const screenshot of testResult.screenshots || []) {
+          const snapshot = {
+            id: screenshot.id,
+            sessionId: testResult.sessionId,
+            version: testResult.version,
+            component: testResult.testId, // Use testId as component identifier
+            url: `test://${testResult.testId}`, // URL for test execution
+            viewport: context.config.testing.viewport || { width: 1920, height: 1080 },
+            screenshotPath: screenshot.path,
+            domSnapshot: testResult.domSnapshot || null,
+            computedStyles: null,
+            metrics: testResult.metrics || null,
+            timestamp: Date.now(),
+          };
+
+          this.db.saveSnapshot(snapshot);
+        }
       }
       this.logger.info(`Saved ${result.data.results.length} test results to database`);
       this.logger.info(`Pass: ${result.data.passed}, Fail: ${result.data.failed}, Skip: ${result.data.skipped}`);
@@ -261,6 +280,16 @@ export class OrchestratorAgent extends BaseAgent {
       return this.failure(result.error!, SessionState.ERROR);
     }
 
+    // Create and save snapshot comparisons
+    if (result.data?.comparisons && context.data?.results) {
+      await this.saveSnapshotComparisons(
+        context.session.id,
+        context.session.versions,
+        context.data.results,
+        result.data.comparisons
+      );
+    }
+
     // If no differences found, proceed to evaluation
     if (result.data.differences.length === 0) {
       return this.success(
@@ -278,6 +307,82 @@ export class OrchestratorAgent extends BaseAgent {
       result.data,
       nextState
     );
+  }
+
+  /**
+   * Create and save snapshot comparisons from analysis results
+   */
+  private async saveSnapshotComparisons(
+    sessionId: string,
+    versions: string[],
+    testResults: any[],
+    comparisons: any[]
+  ): Promise<void> {
+    const baseVersion = versions[0];
+
+    for (let i = 1; i < versions.length; i++) {
+      const targetVersion = versions[i];
+
+      // Get snapshots for base and target versions
+      const baseSnapshots = this.db.getSnapshots(sessionId, baseVersion);
+      const targetSnapshots = this.db.getSnapshots(sessionId, targetVersion);
+
+      // Group snapshots by component (testId)
+      const snapshotsByComponent = new Map<string, { base: any[], target: any[] }>();
+
+      for (const baseSnapshot of baseSnapshots) {
+        if (!snapshotsByComponent.has(baseSnapshot.component)) {
+          snapshotsByComponent.set(baseSnapshot.component, { base: [], target: [] });
+        }
+        snapshotsByComponent.get(baseSnapshot.component)!.base.push(baseSnapshot);
+      }
+
+      for (const targetSnapshot of targetSnapshots) {
+        if (!snapshotsByComponent.has(targetSnapshot.component)) {
+          snapshotsByComponent.set(targetSnapshot.component, { base: [], target: [] });
+        }
+        snapshotsByComponent.get(targetSnapshot.component)!.target.push(targetSnapshot);
+      }
+
+      // Create comparisons for matching components
+      for (const [component, snapshots] of snapshotsByComponent.entries()) {
+        if (snapshots.base.length > 0 && snapshots.target.length > 0) {
+          // Use first snapshot from each version for comparison
+          const baseSnapshot = snapshots.base[0];
+          const targetSnapshot = snapshots.target[0];
+
+          // Find visual diff data from analysis results
+          const comparison = comparisons.find(c =>
+            c.baseVersion === baseVersion && c.targetVersion === targetVersion
+          );
+
+          const visualDiff = comparison?.differences.find((d: any) =>
+            d.type === 'VISUAL' && d.location?.includes(component)
+          );
+
+          const snapshotComparison = {
+            id: `${baseSnapshot.id}-${targetSnapshot.id}`,
+            sessionId,
+            baseSnapshotId: baseSnapshot.id,
+            targetSnapshotId: targetSnapshot.id,
+            component,
+            visualDiff: visualDiff?.visualDiff || null,
+            domDiff: null,
+            styleDiff: null,
+            similarityScore: visualDiff?.visualDiff
+              ? 100 - visualDiff.visualDiff.pixelDiffPercentage
+              : 100,
+            differencesFound: visualDiff ? 1 : 0,
+            verdict: visualDiff ? 'DIFFERENCES_DETECTED' : 'IDENTICAL',
+            timestamp: Date.now(),
+          };
+
+          this.db.saveSnapshotComparison(snapshotComparison);
+        }
+      }
+    }
+
+    this.logger.info('Saved snapshot comparisons to database');
   }
 
   private async handleDependencyUpgrade(context: AgentContext): Promise<AgentResult> {
