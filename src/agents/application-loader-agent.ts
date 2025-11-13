@@ -242,27 +242,75 @@ CMD ${appConfig.startCommand}
       throw new Error('Container runtime not initialized');
     }
 
-    this.logger.info(`Building image ${imageName}`);
+    this.logger.info(`Building image ${imageName} from context: ${contextPath}`);
 
-    const stream = await this.docker.buildImage(
-      {
-        context: contextPath,
-        src: ['.'],
-      },
-      {
-        t: imageName,
-        dockerfile: 'Dockerfile.pixeldust',
-      }
-    );
+    try {
+      const stream = await this.docker.buildImage(
+        {
+          context: contextPath,
+          src: ['.'],
+        },
+        {
+          t: imageName,
+          dockerfile: 'Dockerfile.pixeldust',
+        }
+      );
 
-    await new Promise((resolve, reject) => {
-      this.docker!.modem.followProgress(stream, (err, res) => {
-        if (err) reject(err);
-        else resolve(res);
+      await new Promise<void>((resolve, reject) => {
+        let hasError = false;
+        let errorMessage = '';
+
+        this.docker!.modem.followProgress(
+          stream,
+          (err, res) => {
+            if (err) {
+              this.logger.error(`Build stream error: ${err.message}`);
+              reject(err);
+            } else {
+              if (hasError) {
+                reject(new Error(`Image build failed: ${errorMessage}`));
+              } else {
+                resolve();
+              }
+            }
+          },
+          (event: any) => {
+            // Log build progress
+            if (event.stream) {
+              this.logger.debug(event.stream.trim());
+            }
+
+            // Check for errors in build output
+            if (event.error) {
+              hasError = true;
+              errorMessage = event.error;
+              this.logger.error(`Build error: ${event.error}`);
+            }
+
+            // Log error details
+            if (event.errorDetail) {
+              hasError = true;
+              errorMessage = event.errorDetail.message || JSON.stringify(event.errorDetail);
+              this.logger.error(`Build error detail: ${errorMessage}`);
+            }
+          }
+        );
       });
-    });
 
-    this.logger.info(`Image ${imageName} built successfully`);
+      // Verify image was created
+      const images = await this.docker.listImages({
+        filters: { reference: [imageName] }
+      });
+
+      if (images.length === 0) {
+        throw new Error(`Image ${imageName} was not found after build`);
+      }
+
+      this.logger.info(`Image ${imageName} built successfully`);
+    } catch (error) {
+      this.logger.error(`Failed to build image ${imageName}`, error as Error);
+      throw new Error(`Failed to build Docker image ${imageName}: ${(error as Error).message}`);
+    }
   }
 
   private parseMemory(memStr: string): number {
