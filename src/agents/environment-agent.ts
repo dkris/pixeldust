@@ -102,6 +102,37 @@ export class EnvironmentAgent extends BaseAgent {
         throw new Error('Docker/Podman client not initialized');
       }
 
+      // Create a simple test HTML page with the framework components
+      const testPageHtml = this.generateTestPage(config.framework.name, config.components);
+
+      // Create container with inline setup script
+      const setupScript = `
+mkdir -p /app
+cd /app
+
+# Create package.json
+cat > package.json <<'PKGJSON'
+{
+  "name": "pixeldust-test",
+  "version": "1.0.0",
+  "dependencies": {
+    "${config.framework.name}": "${version}"
+  }
+}
+PKGJSON
+
+# Install dependencies
+npm install --quiet
+
+# Create test page
+cat > index.html <<'HTMLEOF'
+${testPageHtml}
+HTMLEOF
+
+# Install and start http-server
+npx --yes http-server -p 3000 -s -c-1
+`;
+
       // Create container
       const dockerContainer = await this.docker.createContainer({
         Image: config.containers.baseImage,
@@ -121,11 +152,7 @@ export class EnvironmentAgent extends BaseAgent {
           },
           AutoRemove: true,
         },
-        Cmd: [
-          'sh',
-          '-c',
-          `npm install ${config.framework.name}@${version} && npx http-server -p 3000`,
-        ],
+        Cmd: ['sh', '-c', setupScript],
       });
 
       // Start container
@@ -211,6 +238,89 @@ export class EnvironmentAgent extends BaseAgent {
     });
 
     await Promise.all(healthChecks);
+  }
+
+  /**
+   * Generate a test HTML page with UI components
+   */
+  private generateTestPage(frameworkName: string, componentsConfig: any): string {
+    // Get list of components to include
+    const components = componentsConfig?.include || [
+      'ui5-button',
+      'ui5-input',
+      'ui5-card',
+      'ui5-table',
+      'ui5-list',
+      'ui5-dialog',
+    ];
+
+    // Generate import statements for UI5 web components
+    const imports = components
+      .map((component: string) => {
+        // Convert tag name to module path (e.g., ui5-button -> Button)
+        const moduleName = component
+          .split('-')
+          .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join('');
+        return `import "${frameworkName}/dist/${moduleName}.js";`;
+      })
+      .join('\n    ');
+
+    // Generate HTML for each component
+    const componentHtml = components
+      .map((component: string) => {
+        return `
+    <section class="component-demo" data-component="${component}">
+      <h2>${component}</h2>
+      <div class="demo-container">
+        <${component} id="${component}-1">Sample ${component}</${component}>
+      </div>
+    </section>`;
+      })
+      .join('\n');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PixelDust Test Page</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      padding: 20px;
+    }
+    .component-demo {
+      margin: 30px 0;
+      padding: 20px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .demo-container {
+      margin-top: 15px;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 4px;
+    }
+    h1 {
+      color: #333;
+    }
+    h2 {
+      color: #666;
+      margin-top: 0;
+    }
+  </style>
+  <script type="module">
+    ${imports}
+  </script>
+</head>
+<body>
+  <h1>PixelDust UI Component Test Page</h1>
+  <p>This page contains UI components for automated testing.</p>
+  ${componentHtml}
+</body>
+</html>`;
   }
 
   private parseMemory(memStr: string): number {
