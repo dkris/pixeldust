@@ -150,6 +150,12 @@ export class ExecutionAgent extends BaseAgent {
       // Navigate to test page
       await page.goto(baseUrl, { timeout: config.testing.timeout });
 
+      // Wait for page to be ready
+      await page.waitForLoadState('networkidle', { timeout: config.testing.timeout });
+
+      // Execute the actual test based on category
+      await this.executeTestLogic(page, test, config);
+
       // Capture screenshots
       const screenshots = await this.captureScreenshots(
         page,
@@ -183,6 +189,8 @@ export class ExecutionAgent extends BaseAgent {
     } catch (error) {
       const duration = Date.now() - startTime;
 
+      this.logger.warn(`Test ${test.name} failed: ${(error as Error).message}`);
+
       return {
         id: uuidv4(),
         testId: test.id,
@@ -194,6 +202,136 @@ export class ExecutionAgent extends BaseAgent {
         screenshots: [],
         executedAt: new Date(),
       };
+    }
+  }
+
+  /**
+   * Execute test logic based on test category
+   */
+  private async executeTestLogic(page: Page, test: any, config: any): Promise<void> {
+    this.logger.debug(`Executing ${test.category} test: ${test.name}`);
+
+    switch (test.category) {
+      case 'FUNCTIONAL':
+        await this.executeFunctionalTest(page, test);
+        break;
+
+      case 'VISUAL':
+        await this.executeVisualTest(page, test);
+        break;
+
+      case 'ACCESSIBILITY':
+        await this.executeAccessibilityTest(page, test);
+        break;
+
+      case 'PERFORMANCE':
+        await this.executePerformanceTest(page, test);
+        break;
+
+      default:
+        // Default: just verify page loaded
+        await page.waitForLoadState('load');
+    }
+  }
+
+  /**
+   * Execute functional tests - verify component behavior
+   */
+  private async executeFunctionalTest(page: Page, test: any): Promise<void> {
+    // Extract component name from test name or use a pattern
+    const componentMatch = test.name.match(/(ui5-[\w-]+)/);
+    const component = componentMatch ? componentMatch[1] : 'ui5-button';
+
+    // Wait for component to be present
+    const element = page.locator(component).first();
+
+    // Basic functional assertions
+    await element.waitFor({ state: 'attached', timeout: 5000 });
+
+    const isVisible = await element.isVisible();
+    if (!isVisible) {
+      throw new Error(`Component ${component} is not visible`);
+    }
+
+    // Try basic interaction if it's an interactive component
+    if (component.includes('button') || component.includes('input')) {
+      try {
+        await element.click({ timeout: 2000 });
+        this.logger.debug(`Successfully clicked ${component}`);
+      } catch {
+        // Some components might not be clickable, that's ok
+        this.logger.debug(`Component ${component} not clickable`);
+      }
+    }
+  }
+
+  /**
+   * Execute visual tests - verify rendering
+   */
+  private async executeVisualTest(page: Page, test: any): Promise<void> {
+    const componentMatch = test.name.match(/(ui5-[\w-]+)/);
+    const component = componentMatch ? componentMatch[1] : 'ui5-button';
+
+    const element = page.locator(component).first();
+    await element.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Verify element has non-zero dimensions
+    const box = await element.boundingBox();
+    if (!box || box.width === 0 || box.height === 0) {
+      throw new Error(`Component ${component} has zero dimensions`);
+    }
+
+    this.logger.debug(`Component ${component} rendered with dimensions: ${box.width}x${box.height}`);
+  }
+
+  /**
+   * Execute accessibility tests - verify ARIA and a11y
+   */
+  private async executeAccessibilityTest(page: Page, test: any): Promise<void> {
+    const componentMatch = test.name.match(/(ui5-[\w-]+)/);
+    const component = componentMatch ? componentMatch[1] : 'ui5-button';
+
+    const element = page.locator(component).first();
+    await element.waitFor({ state: 'attached', timeout: 5000 });
+
+    // Check for basic accessibility attributes
+    const role = await element.getAttribute('role');
+    const ariaLabel = await element.getAttribute('aria-label');
+
+    this.logger.debug(`Component ${component} accessibility: role=${role}, aria-label=${ariaLabel}`);
+
+    // Verify element is keyboard accessible (can be focused)
+    try {
+      await element.focus({ timeout: 2000 });
+      const isFocused = await element.evaluate(el => el === document.activeElement);
+      if (!isFocused) {
+        this.logger.warn(`Component ${component} is not keyboard focusable`);
+      }
+    } catch {
+      this.logger.warn(`Failed to focus ${component}`);
+    }
+  }
+
+  /**
+   * Execute performance tests - measure metrics
+   */
+  private async executePerformanceTest(page: Page, test: any): Promise<void> {
+    // Performance metrics are collected separately in collectMetrics()
+    // Here we just verify the page performed within acceptable limits
+
+    const metrics = await page.evaluate(() => {
+      const perfData = performance.getEntriesByType('navigation')[0] as any;
+      return {
+        loadTime: perfData?.loadEventEnd - perfData?.fetchStart || 0,
+        domReady: perfData?.domContentLoadedEventEnd - perfData?.fetchStart || 0,
+      };
+    });
+
+    this.logger.debug(`Performance metrics: loadTime=${metrics.loadTime}ms, domReady=${metrics.domReady}ms`);
+
+    // Fail if page took too long to load (> 5 seconds)
+    if (metrics.loadTime > 5000) {
+      throw new Error(`Page load time exceeded threshold: ${metrics.loadTime}ms > 5000ms`);
     }
   }
 

@@ -257,19 +257,23 @@ export class TestGenerationAgent extends BaseAgent {
   private async generateTestsForComponent(component: string, config: any): Promise<Test[]> {
     const prompt = `Generate comprehensive test scenarios for the "${component}" web component.
 
-Generate tests in the following categories:
-1. Functional tests (user interactions, state changes)
-2. Visual tests (screenshot capture at different states)
-3. Accessibility tests (ARIA attributes, keyboard navigation)
+Generate tests in the following categories with balanced distribution:
+1. Functional tests (40%) - User interactions, state changes, behavior verification
+2. Visual tests (25%) - Screenshot capture, rendering verification, layout checks
+3. Accessibility tests (20%) - ARIA attributes, keyboard navigation, screen reader support
+4. Performance tests (15%) - Rendering speed, interaction responsiveness, resource usage
+
+IMPORTANT: Include at least ONE test from each category to ensure balanced coverage.
 
 For each test, provide:
-- A unique descriptive name (kebab-case)
-- Clear description of what the test does
+- A unique descriptive name (kebab-case) that includes the component name
+- Clear description of what the test verifies
+- Category that matches one of the four above
 - Complete Playwright test code
 
 The component will be tested across multiple versions, so focus on core functionality that should remain consistent.
 
-Generate 4-6 comprehensive tests that cover the most important aspects of this component.`;
+Generate 6-8 comprehensive tests with representation from all categories.`;
 
     try {
       const response = await this.ai.messages.create({
