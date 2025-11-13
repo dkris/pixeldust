@@ -34,7 +34,16 @@ export class TestGenerationAgent extends BaseAgent {
       // Get list of components to test
       const components = await this.discoverComponents(config);
 
-      for (const component of components) {
+      // Filter out empty or invalid component names
+      const validComponents = components.filter(c => c && c.trim().length > 0);
+
+      if (validComponents.length === 0) {
+        throw new Error('No valid components found to test');
+      }
+
+      this.logger.info(`Found ${validComponents.length} valid components to test`);
+
+      for (const component of validComponents) {
         this.logger.info(`Generating tests for component: ${component}`);
 
         const tests = await this.generateTestsForComponent(component, config);
@@ -69,11 +78,13 @@ export class TestGenerationAgent extends BaseAgent {
     if (config.components?.include && config.components.include.length > 0) {
       this.logger.info('Using explicitly included components');
       components = config.components.include;
+      this.logger.debug(`Included components: ${JSON.stringify(components)}`);
     }
     // Priority 2: Auto-detect from application code if available
     else if (config.application?.path) {
-      this.logger.info('Auto-detecting components from application code');
+      this.logger.info(`Auto-detecting components from application code: ${config.application.path}`);
       components = await this.scanApplicationForComponents(config.application.path, config.framework.name);
+      this.logger.debug(`Scanned components: ${JSON.stringify(components)}`);
 
       if (components.length === 0) {
         this.logger.warn('No components detected in application, falling back to default list');
@@ -89,10 +100,20 @@ export class TestGenerationAgent extends BaseAgent {
     // Apply exclusions
     if (config.components?.exclude && config.components.exclude.length > 0) {
       this.logger.info(`Excluding components: ${config.components.exclude.join(', ')}`);
+      const beforeExclude = components.length;
       components = components.filter(c => !config.components.exclude.includes(c));
+      this.logger.debug(`Excluded ${beforeExclude - components.length} components`);
     }
 
+    // Filter out any empty or invalid entries
+    components = components.filter(c => c && typeof c === 'string' && c.trim().length > 0);
+
     this.logger.info(`Testing ${components.length} components: ${components.join(', ')}`);
+
+    if (components.length === 0) {
+      this.logger.error('No components to test after filtering');
+    }
+
     return components;
   }
 
@@ -298,6 +319,7 @@ Return ONLY the JSON array, no explanation or markdown.`;
       const jsonMatch = jsonText.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
         this.logger.warn(`Could not extract JSON array from AI response for ${component}`);
+        this.logger.debug(`AI response (first 1000 chars): ${jsonText.substring(0, 1000)}`);
         throw new Error('Could not extract JSON from AI response');
       }
 
