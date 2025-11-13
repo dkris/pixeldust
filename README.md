@@ -1,152 +1,343 @@
 # PixelDust - Agentic UI Version Testing System
 
-An intelligent, multi-agent system for automated UI version testing, visual regression detection, and autonomous remediation.
+An intelligent, multi-agent system for automated UI version testing with application-aware workflow discovery, visual regression detection, and autonomous remediation.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 
 ## Overview
 
-PixelDust is an AI-powered testing system that automatically:
-- ✅ Spins up isolated environments for each framework version (Docker **or Podman**)
-- 🤖 Generates comprehensive Playwright tests using AI
-- 📸 Captures screenshots for visual regression testing
-- 🔍 Performs detailed DOM and performance comparisons
-- 💡 Proposes intelligent remediations for breaking changes
-- 🔧 Autonomously implements approved fixes
-- 🔄 Iterates until all tests pass
+PixelDust is an AI-powered testing system that automatically discovers your application structure, generates intelligent tests, and migrates UI frameworks with minimal human intervention.
 
-**🚀 Native Podman Support:** Full rootless and rootful Podman support with automatic socket detection. See [PODMAN.md](./PODMAN.md) for details.
+**What Makes PixelDust Unique:**
+- 🔍 **Automatic Workflow Discovery**: Crawls your running application to understand pages, routes, and user journeys
+- 🧠 **Application-Aware Testing**: Tests components in their real application context, not in isolation
+- 🤖 **13 Specialized AI Agents**: Each agent focuses on a specific aspect of testing and migration
+- 🔄 **Full Automation**: From discovery to dependency upgrade to test fixing to deployment
+- 📊 **Continuous Evaluation**: Real-time quality monitoring and feedback during execution
+- 🐳 **Native Podman Support**: Rootless containers for enhanced security
 
-## Capabilities
-
-### 🎯 Two Modes of Operation
-
-**1. Framework-Only Mode** (Quick evaluation)
-- Tests UI framework components in isolation
-- Fast comparison between versions
-- Ideal for evaluating upgrades before starting
-
-**2. Application Mode** (Full automated migration) ⭐ NEW
-- Tests YOUR actual application code
-- Automatically upgrades dependencies
-- AI-powered test fixing
-- Complete end-to-end migration
-
-### ✅ What PixelDust Does (v0.2.0)
-
-**Core Features:**
-- ✅ **Application Integration**: Mount and test your real application code
-- ✅ **Automatic Dependency Upgrade**: Updates package.json and resolves peer dependencies
-- ✅ **AI-Powered Test Fixing**: Automatically fixes broken tests after framework upgrades
-- ✅ **Breaking Change Detection**: Visual, DOM, API, and performance differences
-- ✅ **Intelligent Remediation**: AI proposes code fixes with confidence scores
-- ✅ **Visual Regression**: Pixel-perfect comparison with detailed diffs
-- ✅ **Multi-Agent System**: 12 specialized agents working together
-- ✅ **Hybrid Architecture**: Pipeline-based workflow with event-driven monitoring
-- ✅ **Continuous Improvement**: Evaluation agent provides feedback after each session
-- ✅ **Real-Time Feedback**: Streaming progress and quality alerts during execution
-- ✅ **Interactive Diff Viewer**: Browser-based UI for reviewing comparisons
-- ✅ **Native Podman Support**: Rootless containers for enhanced security
-
-**Complete Workflow:**
-1. 📦 Load your application into containers
-2. 🔄 Test with multiple framework versions
-3. 🔍 Analyze differences (visual + functional)
-4. ⬆️  Upgrade dependencies automatically
-5. 🔧 Fix broken tests with AI
-6. ✅ Verify everything works
-7. 📊 Generate comprehensive reports
+**Core Capabilities:**
+- ✅ Discovers application structure automatically (pages, workflows, component usage)
+- ✅ Generates context-aware tests based on real user workflows
+- ✅ Tests YOUR actual application code, not just components
+- ✅ Compares multiple framework versions in parallel
+- ✅ Detects breaking changes (visual, DOM, API, performance)
+- ✅ AI-powered root cause analysis and fix proposals
+- ✅ Automatically upgrades dependencies and fixes broken tests
+- ✅ Verifies fixes and iterates until all tests pass
+- ✅ Generates comprehensive reports with visual diffs
 
 ## Architecture
 
-### Hybrid Architecture: Pipeline Core + Event Layer
-
-PixelDust uses a **Hybrid Architecture** combining:
-- **Pipeline Layer**: Structured workflow execution with clear dependencies
-- **Event Layer**: Real-time monitoring, evaluation, and feedback
-
-See [HYBRID_ARCHITECTURE.md](./HYBRID_ARCHITECTURE.md) for detailed documentation.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      PIPELINE LAYER                          │
-│  [Discover] → [Generate] → [Execute] → [Analyze] → [Eval]  │
-│       │           │            │           │                 │
-│       └───────────┴────────────┴───────────┘                │
-│                    │ (Emits events)                          │
-└────────────────────┼─────────────────────────────────────────┘
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       EVENT LAYER                            │
-│  Event Bus → [Continuous Evaluation] [Metrics] [Alerts]    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Traditional View
+### System Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    AGENTIC UI TESTING SYSTEM                        │
+│                    PIXELDUST AGENTIC SYSTEM                         │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │              TRIGGER LAYER                                    │  │
-│  │  ┌────────────┐  ┌──────────────┐  ┌──────────────┐        │  │
-│  │  │    CLI     │  │  VS Code     │  │   Cursor     │        │  │
-│  │  │  Interface │  │  Extension   │  │  Extension   │        │  │
-│  │  └────────────┘  └──────────────┘  └──────────────┘        │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                            │                                         │
-│                            ▼                                         │
+│  │         USER INTERFACES (Trigger Layer)                      │  │
+│  │                                                               │  │
+│  │   [CLI] ────────── [VS Code Ext] ────────── [Cursor Ext]    │  │
+│  │     │                    │                        │          │  │
+│  └─────┼────────────────────┼────────────────────────┼──────────┘  │
+│        │                    │                        │              │
+│        └────────────────────┴────────────────────────┘              │
+│                             │                                        │
+│                             ▼                                        │
 │  ┌──────────────────────────────────────────────────────────────┐  │
-│  │         HYBRID ORCHESTRATOR (Pipeline + Events)              │  │
-│  │  • Executes pipeline stages in dependency order             │  │
-│  │  • Emits events for real-time monitoring                    │  │
-│  │  • Enables continuous evaluation                            │  │
+│  │      ORCHESTRATOR (Hybrid Pipeline + Event System)           │  │
+│  │                                                               │  │
+│  │   State Machine: Coordinates agent execution flow            │  │
+│  │   Event Bus: Real-time monitoring and evaluation             │  │
+│  │   Pipeline: Structured dependency management                 │  │
 │  └──────────────────────────────────────────────────────────────┘  │
-│         │              │              │              │               │
-│    ┌────┴────┐    ┌────┴────┐   ┌────┴────┐   ┌────┴────┐         │
-│    ▼         ▼    ▼         ▼   ▼         ▼   ▼         ▼         │
-│  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐   │
-│  │Env  │  │Test │  │Exec │  │Analy│  │Remed│  │Impl │  │Review│   │
-│  │Agent│  │Gen  │  │Agent│  │sis  │  │Agent│  │Agent│  │Agent │   │
-│  │     │  │Agent│  │     │  │Agent│  │     │  │     │  │     │   │
-│  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘   │
+│                             │                                        │
+│                             ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │               AGENT EXECUTION PIPELINE                        │  │
+│  │                                                               │  │
+│  │  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐ │  │
+│  │  │  Phase 0 │   │  Phase 1 │   │  Phase 2 │   │  Phase 3 │ │  │
+│  │  │   SETUP  │ → │ DISCOVER │ → │   TEST   │ → │ REMEDIATE│ │  │
+│  │  └──────────┘   └──────────┘   └──────────┘   └──────────┘ │  │
+│  │       │              │              │              │         │  │
+│  │       ▼              ▼              ▼              ▼         │  │
+│  │                                                               │  │
+│  │  [AppLoader]   [Workflow]     [TestGen]      [Analysis]     │  │
+│  │  [Environment] [Discovery]    [Execution]    [Remediation]  │  │
+│  │                [Component      [Performance]  [DepUpgrade]   │  │
+│  │                 Scanner]                      [TestFixing]   │  │
+│  │                                               [Review]       │  │
+│  │                                                               │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                             │                                        │
+│                             ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │              CONTINUOUS EVALUATION LAYER                      │  │
+│  │                                                               │  │
+│  │  [Metrics]  [Quality Alerts]  [Feedback]  [Recommendations] │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed architecture documentation.
+### Application-Aware Testing Pipeline
 
-## Features
+PixelDust implements a three-phase strategy for intelligent, context-aware testing:
 
-### 🤖 Multi-Agent System
-- **Orchestrator Agent**: Coordinates the entire testing lifecycle
-- **Environment Agent**: Manages containerized test environments
-- **Test Generation Agent**: AI-powered test creation
-- **Execution Agent**: Parallel test execution with Playwright
-- **Analysis Agent**: Multi-dimensional comparison (visual, DOM, performance)
-- **Remediation Agent**: Intelligent fix proposals
-- **Implementation Agent**: Autonomous code changes
-- **Review Agent**: Post-implementation verification
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  PHASE 1: Application-Aware Testing                                │
+│  ✅ Dual-mode test generation (framework vs application)           │
+│  ✅ Application-context aware prompts                              │
+│  ✅ Lenient test execution for real workflows                      │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  PHASE 2: Workflow Discovery (Automatic)                           │
+│  ✅ Crawls running application to discover pages                   │
+│  ✅ Maps components to pages with usage counts                     │
+│  ✅ Identifies interactive elements and workflows                  │
+│  ✅ Builds workflow graphs from navigation patterns                │
+│  ✅ Detects usage patterns (forms, dashboards, lists)              │
+│  ✅ Provides rich context for test generation                      │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  PHASE 3: Full Workflow Testing (Coming Soon)                      │
+│  ⏳ Multi-page workflow execution                                  │
+│  ⏳ Application state verification between steps                   │
+│  ⏳ Complete user journey validation                               │
+│  ⏳ Data persistence testing across workflows                      │
+└────────────────────────────────────────────────────────────────────┘
+```
 
-### 🔍 Comprehensive Analysis
-- **Visual Comparison**: Pixel-perfect + perceptual diffing
-- **DOM Comparison**: Structural and semantic analysis
-- **Performance Metrics**: FCP, LCP, TTI tracking
-- **Accessibility**: ARIA attributes and a11y tree comparison
+**How It Works:**
 
-### 🎯 Intelligent Remediation
-- AI-powered root cause analysis
-- Multiple solution proposals with confidence scores
-- Impact assessment and effort estimation
-- Automated implementation with Git integration
+1. **Application Loading**: Mounts your application code into containers
+2. **Workflow Discovery**: Crawls running app to discover pages, components, and user flows
+3. **Component Analysis**: Scans source code for component imports and usage
+4. **Intelligent Test Generation**: Creates tests based on actual application workflows
+5. **Parallel Execution**: Runs tests across multiple versions simultaneously
+6. **Multi-Dimensional Analysis**: Compares visual, DOM, performance, and accessibility
+7. **AI-Powered Remediation**: Analyzes differences and proposes intelligent fixes
+8. **Autonomous Implementation**: Applies fixes, commits changes, and re-validates
 
-### 📊 Rich Reporting
-- Markdown, HTML, and JSON formats
-- Visual diff images
-- Detailed change logs
-- Sign-off workflows
+See [ARCHITECTURE.md](./ARCHITECTURE.md) and [HYBRID_ARCHITECTURE.md](./HYBRID_ARCHITECTURE.md) for detailed documentation.
+
+## 13 Specialized AI Agents
+
+| Agent | Responsibility | Key Features |
+|-------|---------------|--------------|
+| **Orchestrator** | Coordinates entire lifecycle | State machine, event emission, pipeline management |
+| **ApplicationLoader** | Loads real application code | Docker/Podman integration, dependency installation |
+| **Environment** | Manages test environments | Isolated containers per version, port management |
+| **WorkflowDiscovery** | Discovers app structure | Page crawling, component mapping, workflow graphs |
+| **TestGeneration** | Creates intelligent tests | Workflow-aware, AI-powered, category-balanced |
+| **Execution** | Runs tests in parallel | Multi-browser, screenshot capture, metrics collection |
+| **Analysis** | Compares versions | Visual diff, DOM comparison, performance analysis |
+| **DependencyUpgrade** | Updates dependencies | package.json modification, peer dependency resolution |
+| **TestFixing** | Fixes broken tests | AI-powered analysis, API migration, assertion updates |
+| **Remediation** | Proposes code fixes | Root cause analysis, multiple solutions, confidence scores |
+| **Implementation** | Applies approved fixes | Git integration, feature branches, atomic commits |
+| **Review** | Verifies implementations | Re-execution, regression detection, quality gates |
+| **Evaluation** | Continuous improvement | Quality metrics, feedback generation, recommendations |
+
+## Two Modes of Operation
+
+### 1. Framework-Only Mode (Quick Evaluation)
+
+Fast comparison of framework versions in isolation.
+
+**Use Cases:**
+- Evaluating upgrade impact before starting
+- Testing framework components standalone
+- Quick compatibility checks
+
+**Example Config:**
+```json
+{
+  "framework": {
+    "name": "@ui5/webcomponents",
+    "versions": ["1.24.0", "2.0.0"]
+  },
+  "components": {
+    "include": ["ui5-button", "ui5-input", "ui5-table"]
+  }
+}
+```
+
+### 2. Application Mode (Full Automated Migration) ⭐
+
+Tests your real application with automatic workflow discovery.
+
+**Use Cases:**
+- Complete framework migrations
+- Production application testing
+- Workflow-based validation
+
+**Features:**
+- ✅ Automatic workflow discovery
+- ✅ Component usage mapping
+- ✅ Application-aware test generation
+- ✅ Dependency auto-upgrade
+- ✅ AI-powered test fixing
+- ✅ End-to-end migration
+
+**Example Config:**
+```json
+{
+  "framework": {
+    "name": "@ui5/webcomponents",
+    "versions": ["1.24.0", "2.0.0"]
+  },
+  "application": {
+    "path": "./my-ui5-app",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "port": 8080,
+    "sourcePaths": ["src/**/*.tsx", "src/**/*.ts"]
+  },
+  "components": {
+    "exclude": ["ui5-shellbar"]
+  }
+}
+```
+
+**What Happens Automatically:**
+1. 📦 Loads your application into containers
+2. 🔍 Crawls running app to discover pages and workflows
+3. 🔎 Scans source code for component imports and usage
+4. 🤖 Generates workflow-aware tests
+5. 🧪 Tests with multiple framework versions
+6. 📊 Analyzes differences (visual, DOM, performance)
+7. ⬆️  Upgrades dependencies automatically
+8. 🔧 Fixes broken tests with AI
+9. ✅ Verifies everything works
+10. 📝 Generates comprehensive reports
+
+## Key Features
+
+### 🔍 Automatic Workflow Discovery
+
+```
+Application: http://localhost:8080
+    │
+    ├─ Page: / (Home)
+    │   ├─ ui5-button (3 instances)
+    │   ├─ ui5-input (2 instances)
+    │   └─ Links: [/dashboard, /login]
+    │
+    ├─ Page: /dashboard
+    │   ├─ ui5-table (1 instance)
+    │   ├─ ui5-card (4 instances)
+    │   └─ Workflow: "View data" (Priority: HIGH)
+    │
+    └─ Page: /login
+        ├─ ui5-input (2 instances)
+        ├─ ui5-button (1 instance)
+        └─ Workflow: "User authentication" (Priority: HIGH)
+
+Component Usage Summary:
+- ui5-button: 5 pages, 12 instances
+  - Patterns: form-input, dashboard-widget
+- ui5-table: 2 pages, 3 instances
+  - Patterns: dashboard-widget, list-item
+```
+
+### 🧠 Application-Aware Test Generation
+
+Instead of generic component tests, PixelDust generates tests based on real usage:
+
+**Before (Generic):**
+```typescript
+test('ui5-button renders', async ({ page }) => {
+  await page.goto('/test-page');
+  const button = page.locator('ui5-button');
+  await expect(button).toBeVisible();
+});
+```
+
+**After (Application-Aware):**
+```typescript
+test('ui5-button-login-form-submission', async ({ page }) => {
+  // Navigate to actual login page
+  await page.goto('/login');
+
+  // Test button in context of login workflow
+  const submitButton = page.locator('ui5-button#submit-login');
+  await expect(submitButton).toBeVisible();
+
+  // Verify button behavior affects application state
+  await submitButton.click();
+  await expect(page).toHaveURL('/dashboard');
+});
+```
+
+The AI receives workflow context:
+```
+WORKFLOW CONTEXT (discovered from application):
+- ui5-button is used on 5 page(s): /, /login, /dashboard, /settings, /checkout
+- Total instances: 12
+- Common patterns: form-input, dashboard-widget
+
+Pages containing ui5-button:
+- "Login" (/login): 3 instance(s)
+- "Dashboard" (/dashboard): 4 instance(s)
+
+Relevant Workflows:
+- "User authentication" (Priority: high)
+  1. Navigate to Login page
+  2. Enter credentials
+  3. Click submit button
+  4. Verify dashboard loads
+```
+
+### 📊 Multi-Dimensional Analysis
+
+**Visual Comparison:**
+- Pixel-perfect diffing with configurable threshold
+- Perceptual difference highlighting
+- Side-by-side visualization
+- Diff image generation
+
+**DOM Comparison:**
+- Structural analysis (added/removed/modified elements)
+- Attribute changes
+- Semantic comparison
+- Accessibility tree diffing
+
+**Performance Analysis:**
+- First Contentful Paint (FCP)
+- Largest Contentful Paint (LCP)
+- Time to Interactive (TTI)
+- Resource usage tracking
+
+**Accessibility Validation:**
+- ARIA attribute comparison
+- Keyboard navigation testing
+- Screen reader compatibility
+- Contrast ratio analysis
+
+### 💡 AI-Powered Remediation
+
+**Root Cause Analysis:**
+- Identifies why tests fail
+- Categorizes issue types (API, visual, behavioral)
+- Traces impact through dependency chain
+
+**Multiple Solution Proposals:**
+- Generates 2-3 fix options per issue
+- Provides confidence scores (0-100)
+- Estimates implementation effort
+- Assesses impact and risks
+
+**Automatic Implementation:**
+- Creates feature branches
+- Applies code changes atomically
+- Commits with descriptive messages
+- Re-runs tests to verify fixes
 
 ## Installation
 
@@ -154,39 +345,32 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed architecture documentation
 npm install -g @pixeldust/ui-version-tester
 ```
 
-Or use it locally in your project:
-
+Or use locally:
 ```bash
 npm install --save-dev @pixeldust/ui-version-tester
 ```
 
 ## Quick Start
 
-### 1. Initialize Configuration
-
+### 1. Initialize
 ```bash
 pixeldust init
 ```
 
-This creates a `.pixeldustrc.json` file in your project root.
-
-### 2. Configure Your Test
-
+### 2. Configure
 Edit `.pixeldustrc.json`:
-
 ```json
 {
   "framework": {
     "name": "@ui5/webcomponents",
-    "versions": ["1.0.0", "2.0.0"]
+    "versions": ["1.24.0", "2.0.0"]
+  },
+  "application": {
+    "path": "./my-app",
+    "port": 8080
   },
   "containers": {
-    "runtime": "docker",
-    "baseImage": "node:18-alpine",
-    "resources": {
-      "memory": "2g",
-      "cpu": 2
-    }
+    "runtime": "docker"
   },
   "ai": {
     "provider": "anthropic",
@@ -196,350 +380,90 @@ Edit `.pixeldustrc.json`:
 ```
 
 ### 3. Set API Key
-
 ```bash
 export ANTHROPIC_API_KEY="your-api-key"
 ```
 
 ### 4. Run Tests
-
 ```bash
 pixeldust test
 ```
 
 ### 5. Review Results
-
 ```bash
-# List all sessions
+# List sessions
 pixeldust list
 
-# View report
-pixeldust report <session-id>
-
-# View evaluation feedback and recommendations
+# View AI feedback and recommendations
 pixeldust show-evaluation <session-id>
 
-# Open interactive diff viewer in browser
+# Open interactive diff viewer
 pixeldust show-diff <session-id>
 
-# Approve a remediation
-pixeldust approve <session-id> <remediation-id>
-```
-
-## CLI Commands
-
-PixelDust provides a comprehensive command-line interface for managing UI version testing workflows.
-
-### `pixeldust init`
-Initialize a new PixelDust configuration file.
-
-Creates a `.pixeldustrc.json` file in the current directory with default settings.
-
-**Options:**
-- `-f, --force`: Overwrite existing configuration
-
-**Examples:**
-```bash
-# Create new configuration
-pixeldust init
-
-# Force overwrite existing configuration
-pixeldust init --force
-```
-
-### `pixeldust test`
-Run UI version testing for the configured framework versions.
-
-**Options:**
-- `-c, --config <path>`: Path to configuration file (default: searches for .pixeldustrc.json)
-- `-v, --versions <versions>`: Comma-separated list of versions to test (overrides config)
-- `--skip-browser-check`: Skip Playwright browser installation check
-
-**Examples:**
-```bash
-# Run with default configuration
-pixeldust test
-
-# Use specific config file
-pixeldust test --config ./configs/ui5-test.json
-
-# Test specific versions only
-pixeldust test --versions 1.24.0,2.0.0,2.16.0
-
-# Skip browser check (useful in CI/CD)
-pixeldust test --skip-browser-check
-```
-
-**Prerequisites:**
-- Playwright browsers must be installed: `npx playwright install chromium`
-- ANTHROPIC_API_KEY or OPENAI_API_KEY must be set
-
-### `pixeldust resume <session-id>`
-Resume a previous testing session from where it left off.
-
-Useful when a session is interrupted or requires manual intervention.
-
-**Arguments:**
-- `<session-id>`: The UUID of the session to resume
-
-**Examples:**
-```bash
-# Resume a specific session
-pixeldust resume abc123-def456-ghi789
-
-# Find session ID first, then resume
-pixeldust list
-pixeldust resume 550e8400-e29b-41d4-a716-446655440000
-```
-
-### `pixeldust list`
-List all testing sessions with their current state and metadata.
-
-**Options:**
-- `-n, --limit <number>`: Maximum number of sessions to display (default: 10)
-
-**Examples:**
-```bash
-# Show last 10 sessions
-pixeldust list
-
-# Show last 50 sessions
-pixeldust list --limit 50
-```
-
-**Output:**
-```
-Recent Sessions:
-
-ID                                   | State              | Versions | Created
-----------------------------------------------------------------------------------------------------
-550e8400-e29b-41d4-a716-446655440000 | COMPLETED          | 1.24.0,2 | 2025-11-13
-6ba7b810-9dad-11d1-80b4-00c04fd430c8 | FAILED             | 2.0.0,2. | 2025-11-12
-```
-
-### `pixeldust report <session-id>`
-Generate a comprehensive report for a completed session.
-
-**Arguments:**
-- `<session-id>`: The UUID of the session
-
-**Options:**
-- `-f, --format <format>`: Report format - `markdown`, `html`, or `json` (default: markdown)
-
-**Examples:**
-```bash
-# Generate markdown report
-pixeldust report abc123-def456
-
 # Generate HTML report
-pixeldust report abc123-def456 --format html
+pixeldust report <session-id> --format html
 
-# Generate JSON report for programmatic use
-pixeldust report abc123-def456 --format json
-```
-
-**Output:**
-Reports are saved to the configured `reporting.outputPath` directory.
-
-### `pixeldust show-tests <session-id>`
-Display or export the generated Playwright test code from a session.
-
-**Arguments:**
-- `<session-id>`: The UUID of the session
-
-**Options:**
-- `-c, --component <component>`: Filter tests by component name
-- `-e, --export <path>`: Export tests to a directory instead of displaying
-
-**Examples:**
-```bash
-# Show all generated tests
-pixeldust show-tests abc123-def456
-
-# Show tests for specific component
-pixeldust show-tests abc123-def456 --component ui5-button
-
-# Export all tests to files
-pixeldust show-tests abc123-def456 --export ./playwright-tests
-
-# Export tests for specific component
-pixeldust show-tests abc123-def456 --component ui5-button --export ./tests
-```
-
-**Output Structure (when using --export):**
-```
-./playwright-tests/
-├── ui5-button/
-│   ├── functional-1.spec.ts
-│   ├── visual-1.spec.ts
-│   └── accessibility-1.spec.ts
-├── ui5-input/
-│   ├── functional-1.spec.ts
-│   └── visual-1.spec.ts
-```
-
-### `pixeldust show-evaluation <session-id>`
-Display detailed evaluation feedback and recommendations from the AI analysis.
-
-Shows test quality metrics, comparison quality, strengths, weaknesses, and actionable recommendations for improvement.
-
-**Arguments:**
-- `<session-id>`: The UUID of the session
-
-**Examples:**
-```bash
-# View evaluation for a session
-pixeldust show-evaluation abc123-def456
-```
-
-**Output Includes:**
-- Overall quality score
-- Test quality metrics (success rate, coverage, duration)
-- Comparison quality metrics (precision, recall, accuracy)
-- Remediation effectiveness (if applicable)
-- Strengths and weaknesses analysis
-- Prioritized recommendations
-- Prompt improvement suggestions
-- Configuration suggestions
-
-### `pixeldust show-diff <session-id>`
-Launch an interactive web-based diff viewer to explore visual and DOM differences.
-
-**Arguments:**
-- `<session-id>`: The UUID of the session
-
-**Options:**
-- `-p, --port <port>`: Port to run web server on (default: 3000)
-- `--no-open`: Don't open browser automatically
-
-**Examples:**
-```bash
-# Start diff viewer (opens browser automatically)
-pixeldust show-diff abc123-def456
-
-# Use custom port
-pixeldust show-diff abc123-def456 --port 8080
-
-# Start server without opening browser
-pixeldust show-diff abc123-def456 --no-open
-```
-
-**Features:**
-- Side-by-side visual comparison with slider
-- DOM diff viewer with syntax highlighting
-- Screenshot carousel with zoom
-- Filter by version, component, or test
-- Export individual comparisons
-
-**Controls:**
-- Press `Ctrl+C` to stop the server
-
-### `pixeldust approve <session-id> <remediation-id>`
-Approve a specific remediation proposal and continue with implementation.
-
-Once approved, the system will automatically apply the remediation, commit changes, and re-run tests.
-
-**Arguments:**
-- `<session-id>`: The UUID of the session
-- `<remediation-id>`: The ID of the remediation to approve
-
-**Examples:**
-```bash
-# Approve a remediation
-pixeldust approve abc123-def456 rem-789
-
-# View remediations first, then approve
-pixeldust show-evaluation abc123-def456
-pixeldust approve abc123-def456 rem-specific-id
-```
-
-**What Happens After Approval:**
-1. System creates a feature branch
-2. Applies the remediation code changes
-3. Commits changes with descriptive message
-4. Re-runs tests to verify the fix
-5. Reports results
-
----
-
-## Command Cheat Sheet
-
-```bash
-# Initial Setup
-pixeldust init                              # Create config file
-export ANTHROPIC_API_KEY="sk-..."          # Set API key
-npx playwright install chromium             # Install browsers
-
-# Run Tests
-pixeldust test                              # Run with default config
-pixeldust test -v 1.24.0,2.0.0             # Test specific versions
-pixeldust test -c custom-config.json       # Use custom config
-
-# View Results
-pixeldust list                              # List all sessions
-pixeldust show-evaluation <session-id>      # View AI feedback
-pixeldust show-diff <session-id>            # Open web diff viewer
-pixeldust show-tests <session-id>           # View generated tests
-pixeldust report <session-id> -f html       # Generate HTML report
-
-# Work with Sessions
-pixeldust resume <session-id>               # Resume interrupted session
-pixeldust approve <session-id> <rem-id>     # Approve remediation
-
-# Export
-pixeldust show-tests <sid> -e ./tests       # Export test files
-pixeldust report <sid> -f json > out.json   # Export JSON report
+# Approve and implement fix
+pixeldust approve <session-id> <remediation-id>
 ```
 
 ## Configuration
 
-### Full Configuration Schema
+### Complete Configuration Schema
 
 ```typescript
 interface Config {
   framework: {
-    name: string;                // e.g., 'ui5-webcomponents'
-    versions: string[];          // e.g., ['1.0.0', '2.0.0']
+    name: string;                     // Framework package name
+    versions: string[];               // Versions to compare
+  };
+
+  application?: {
+    path: string;                     // Path to your application
+    buildCommand: string;             // e.g., "npm run build"
+    startCommand: string;             // e.g., "npm start"
+    port: number;                     // Application port
+    testPaths?: string[];             // Test file patterns
+    sourcePaths?: string[];           // Source file patterns for scanning
   };
 
   components?: {
-    include?: string[];          // Specific components to test
-    exclude?: string[];          // Components to skip
+    include?: string[];               // Manually specify components (optional)
+    exclude?: string[];               // Components to skip
   };
 
   containers: {
-    runtime: 'podman' | 'docker';
-    baseImage: string;           // e.g., 'node:18-alpine'
+    runtime: 'podman' | 'docker';     // Container runtime
+    baseImage: string;                // e.g., 'node:18-alpine'
     resources: {
-      memory: string;            // e.g., '2g'
-      cpu: number;               // Number of CPU cores
+      memory: string;                 // e.g., '4g'
+      cpu: number;                    // CPU cores
     };
   };
 
   testing: {
     browsers: ('chromium' | 'firefox' | 'webkit')[];
     viewport: { width: number; height: number; };
-    timeout: number;             // Milliseconds
-    retries: number;
-    headless?: boolean;
+    timeout: number;                  // Test timeout (ms)
+    retries: number;                  // Retry attempts
+    headless?: boolean;               // Headless mode
   };
 
   analysis: {
-    visualThreshold: number;     // 0-1, pixel difference tolerance
-    domIgnoreAttributes?: string[];
+    visualThreshold: number;          // 0-1, pixel difference tolerance
+    domIgnoreAttributes?: string[];   // Attributes to ignore in DOM diff
     performanceThresholds?: {
-      fcp: number;               // First Contentful Paint
-      lcp: number;               // Largest Contentful Paint
-      tti: number;               // Time to Interactive
+      fcp: number;                    // First Contentful Paint limit
+      lcp: number;                    // Largest Contentful Paint limit
+      tti: number;                    // Time to Interactive limit
     };
   };
 
   ai: {
     provider: 'anthropic' | 'openai';
     model: string;
-    apiKey?: string;             // Or use environment variable
-    temperature?: number;
-    maxTokens?: number;
+    temperature?: number;             // 0-1, default: 0.7
+    maxTokens?: number;               // Max response tokens
   };
 
   storage: {
@@ -555,133 +479,180 @@ interface Config {
     format: ('markdown' | 'html' | 'json')[];
     outputPath: string;
   };
+
+  upgrade?: {
+    updatePeerDependencies: boolean;
+    resolveConflicts: 'auto' | 'manual';
+    fixTests: boolean;
+    createBranches: boolean;
+  };
 }
 ```
 
-## Workflow
+## CLI Commands
 
-### 1. **Initialization**
-The system validates configuration and creates a new session.
+### Core Commands
 
-### 2. **Environment Setup**
-Spins up isolated containers for each version using Docker/Podman.
+| Command | Description |
+|---------|-------------|
+| `pixeldust init` | Initialize configuration file |
+| `pixeldust test` | Run version testing |
+| `pixeldust resume <id>` | Resume interrupted session |
+| `pixeldust list` | List all sessions |
 
-### 3. **Test Generation**
-AI analyzes your components and generates comprehensive test suites covering:
-- Functional testing
-- Visual regression
-- Accessibility
-- Performance
+### Viewing Results
 
-### 4. **Test Execution**
-Runs tests in parallel across all versions and browsers, capturing:
-- Screenshots at key interaction points
-- DOM snapshots
-- Performance metrics
+| Command | Description |
+|---------|-------------|
+| `pixeldust show-evaluation <id>` | View AI feedback and recommendations |
+| `pixeldust show-diff <id>` | Open interactive web-based diff viewer |
+| `pixeldust show-tests <id>` | View/export generated test code |
+| `pixeldust report <id>` | Generate comprehensive report |
 
-### 5. **Analysis**
-Compares results across versions to detect:
-- Visual differences
-- DOM structure changes
-- Performance regressions
-- Accessibility issues
+### Managing Remediations
 
-### 6. **Remediation**
-AI analyzes differences and proposes fixes with:
-- Root cause analysis
-- Multiple solution options
-- Confidence scores
-- Impact assessment
+| Command | Description |
+|---------|-------------|
+| `pixeldust approve <id> <rem-id>` | Approve and implement remediation |
 
-### 7. **Approval**
-User reviews and approves proposed remediations.
+### Command Cheat Sheet
 
-### 8. **Implementation**
-System automatically:
-- Creates feature branches
-- Applies code changes
-- Commits and tags changes
+```bash
+# Setup
+pixeldust init
+export ANTHROPIC_API_KEY="sk-..."
+npx playwright install chromium
 
-### 9. **Review**
-Re-runs tests to verify fixes and ensure no regressions.
+# Run
+pixeldust test
+pixeldust test --config custom.json
+pixeldust test --versions 1.24.0,2.0.0
 
-### 10. **Sign-off**
-User reviews final results and signs off on the migration.
+# Review
+pixeldust list
+pixeldust show-evaluation <id>
+pixeldust show-diff <id>
+pixeldust report <id> --format html
+
+# Manage
+pixeldust resume <id>
+pixeldust approve <id> <rem-id>
+```
+
+See full CLI documentation in [CLI.md](./CLI.md).
 
 ## Examples
 
-### Testing UI5 Web Components Upgrade
+### Example 1: Framework Upgrade
 
 ```bash
-# Initialize
+# Test UI5 1.x → 2.x upgrade
 pixeldust init
+vim .pixeldustrc.json  # Configure versions
 
-# Edit config to test UI5 1.x → 2.x
-vim .pixeldustrc.json
-
-# Run test
 pixeldust test
-
-# Review proposals
-pixeldust list
-
-# Approve and implement
+pixeldust show-evaluation <session-id>
 pixeldust approve <session-id> <remediation-id>
-
-# Generate final report
 pixeldust report <session-id> --format html
 ```
 
-### Custom Component Testing
+### Example 2: Application Migration
 
 ```json
 {
   "framework": {
     "name": "@ui5/webcomponents",
-    "versions": ["1.24.0", "2.0.0"]
+    "versions": ["1.24.0", "2.16.0"]
   },
-  "components": {
-    "include": ["ui5-button", "ui5-input", "ui5-card"]
+  "application": {
+    "path": "./my-dashboard-app",
+    "buildCommand": "npm run build",
+    "startCommand": "npm start",
+    "port": 3000
   }
 }
 ```
 
-## VS Code Extension (Coming Soon)
+**What Happens:**
+1. ✅ Discovers 12 pages, 8 workflows, 15 components automatically
+2. ✅ Generates 120 workflow-aware tests
+3. ✅ Identifies 23 breaking changes
+4. ✅ Proposes 18 fixes with 85% avg confidence
+5. ✅ Upgrades dependencies and fixes tests automatically
+6. ✅ All tests pass after 2 iterations
 
+### Example 3: Component Discovery
+
+No need to manually specify components! PixelDust automatically:
+
+**Scans source code:**
 ```typescript
-// Install extension
-// Open Command Palette (Cmd+Shift+P)
-// Search: "PixelDust: Start Version Test"
-// Select versions and start testing
+// Detects from imports
+import "@ui5/webcomponents/dist/Button.js";
+import { Table, Input } from "@ui5/webcomponents";
+
+// Detects from usage
+<ui5-button>Click</ui5-button>
+<ui5-table></ui5-table>
+```
+
+**Scans running application:**
+```
+Workflow Discovery Results:
+- ui5-button: 5 pages, 12 instances
+- ui5-table: 2 pages, 3 instances
+- ui5-input: 4 pages, 8 instances
+```
+
+**Combines both sources:**
+```
+Final Component List (automatically discovered):
+✅ ui5-button
+✅ ui5-table
+✅ ui5-input
+✅ ui5-card
+✅ ui5-dialog
 ```
 
 ## Advanced Usage
 
-### Custom Test Generation
-
-You can provide your own test templates or seed prompts to guide AI test generation.
-
 ### CI/CD Integration
 
 ```yaml
-# .github/workflows/version-test.yml
-name: Version Testing
+# .github/workflows/pixeldust.yml
+name: UI Version Testing
 
-on: [push]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
-      - run: npm install -g @pixeldust/ui-version-tester
-      - run: pixeldust test --versions 1.0.0,2.0.0
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+
+      - name: Install PixelDust
+        run: npm install -g @pixeldust/ui-version-tester
+
+      - name: Install Playwright
+        run: npx playwright install chromium
+
+      - name: Run Version Tests
+        run: pixeldust test --skip-browser-check
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Upload Reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: pixeldust-reports
+          path: ./reports
 ```
 
-### API Usage
+### Programmatic API
 
 ```typescript
 import { OrchestratorAgent } from '@pixeldust/ui-version-tester';
@@ -691,73 +662,115 @@ const db = new DatabaseManager();
 const orchestrator = new OrchestratorAgent(db);
 
 const session = {
-  id: 'my-session',
+  id: 'custom-session',
   state: SessionState.IDLE,
   config: myConfig,
-  versions: ['1.0.0', '2.0.0'],
+  versions: ['1.24.0', '2.0.0'],
   createdAt: new Date(),
   updatedAt: new Date(),
 };
 
-await orchestrator.execute({ session, config: myConfig });
+const result = await orchestrator.execute({
+  session,
+  config: myConfig
+});
 ```
 
 ## Requirements
 
-- Node.js >= 18.0.0
-- **Container Runtime:** Docker or Podman (native support for both)
+- **Node.js** >= 18.0.0
+- **Container Runtime**: Docker or Podman
   - Docker: Standard installation
-  - Podman: Rootless or rootful with socket enabled ([setup guide](./PODMAN.md))
-- Anthropic API key (or OpenAI API key)
+  - Podman: Rootless or rootful with socket enabled ([guide](./PODMAN.md))
+- **API Key**: Anthropic (recommended) or OpenAI
+- **Playwright**: Browsers auto-installed on first run
+
+## Documentation
+
+- 📘 [Architecture](./ARCHITECTURE.md) - System design and agent details
+- 🏗️ [Hybrid Architecture](./HYBRID_ARCHITECTURE.md) - Pipeline + Event system
+- 🐳 [Podman Setup](./PODMAN.md) - Rootless container configuration
+- 💻 [CLI Reference](./CLI.md) - Complete command documentation
+- 🤝 [Contributing](./CONTRIBUTING.md) - Contribution guidelines
+
+## Roadmap
+
+### v0.2.0 (Current) ✅
+
+**Core System:**
+- [x] 13 specialized AI agents
+- [x] Hybrid architecture (Pipeline + Events)
+- [x] Native Podman support
+
+**Application-Aware Testing:**
+- [x] **Phase 1**: Application-context test generation
+- [x] **Phase 2**: Automatic workflow discovery
+- [x] Automatic component discovery from source
+- [x] Component-to-page mapping
+- [x] Usage pattern detection
+
+**Full Automation:**
+- [x] Automatic dependency upgrades
+- [x] AI-powered test fixing
+- [x] Complete migration workflow
+- [x] Continuous evaluation and feedback
+
+### v0.3.0 (In Progress)
+
+**Phase 3: Full Workflow Testing:**
+- [ ] Multi-page workflow execution
+- [ ] Application state verification
+- [ ] End-to-end journey validation
+- [ ] Data persistence testing
+
+**Framework Support:**
+- [ ] React components
+- [ ] Vue components
+- [ ] Angular components
+
+**Tooling:**
+- [ ] VS Code extension
+- [ ] Cursor extension
+
+### v0.4.0 (Planned)
+
+- [ ] Cloud deployment options
+- [ ] Real browser testing (BrowserStack/Sauce Labs)
+- [ ] Collaborative features (team workflows)
+- [ ] Advanced CI/CD integration
+- [ ] Performance optimization
+- [ ] Multi-framework comparison
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
+We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
+- Development setup
+- Coding standards
+- Pull request process
+- Adding new agents
+- Testing guidelines
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE) for details.
+MIT License - see [LICENSE](./LICENSE)
 
 ## Support
 
 - 📚 [Documentation](./docs)
 - 🐛 [Issue Tracker](https://github.com/pixeldust/pixeldust/issues)
 - 💬 [Discussions](https://github.com/pixeldust/pixeldust/discussions)
-
-## Roadmap
-
-### v0.2.0 (Current) ✅
-- [x] Core multi-agent architecture (11 agents)
-- [x] UI5 web components support
-- [x] Docker/Podman native integration
-- [x] Visual regression testing
-- [x] AI-powered remediation
-- [x] **Application integration** (ApplicationLoaderAgent)
-- [x] **Automatic dependency upgrades** (DependencyUpgradeAgent)
-- [x] **AI-powered test fixing** (TestFixingAgent)
-- [x] **Full automated migration workflow**
-
-### v0.3.0 (Planned)
-- [ ] VS Code extension
-- [ ] Cursor extension
-- [ ] React support
-- [ ] Vue support
-- [ ] Angular support
-
-### v0.4.0 (Future)
-- [ ] Cloud deployment options
-- [ ] Real browser testing (BrowserStack)
-- [ ] Collaborative features
-- [ ] CI/CD deep integration
+- 📧 Email: support@pixeldust.dev
 
 ## Acknowledgments
 
 Built with:
 - [Anthropic Claude](https://anthropic.com) - AI-powered analysis and remediation
 - [Playwright](https://playwright.dev) - Cross-browser testing
-- [Docker](https://docker.com) - Container orchestration
+- [Docker](https://docker.com) / [Podman](https://podman.io) - Container orchestration
 - [TypeScript](https://typescriptlang.org) - Type-safe development
 
 ---
 
-**Made with ❤️ by the PixelDust Team**
+**Made with ❤️ for the developer community**
+
+**PixelDust**: Intelligent UI version testing that understands your application.
