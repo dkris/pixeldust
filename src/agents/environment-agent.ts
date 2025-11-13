@@ -161,13 +161,25 @@ npx --yes http-server -p 3000 -s -c-1
       // Get container info
       const info = await dockerContainer.inspect();
 
+      // Extract and validate port
+      const hostPort = info.NetworkSettings.Ports['3000/tcp']?.[0]?.HostPort;
+      const port = hostPort ? parseInt(hostPort, 10) : 3000;
+
+      if (!port || isNaN(port)) {
+        this.logger.error(`Failed to get valid port for container ${containerName}. NetworkSettings:`, {
+          ports: info.NetworkSettings.Ports,
+          hostPort,
+        });
+        throw new Error(`Invalid port for container ${containerName}: ${hostPort}`);
+      }
+
       const container: Container = {
         id: info.Id,
         name: containerName,
         version,
         status: ContainerStatus.RUNNING,
         ipAddress: info.NetworkSettings.IPAddress,
-        port: parseInt(info.NetworkSettings.Ports['3000/tcp']?.[0]?.HostPort || '3000'),
+        port,
         createdAt: new Date(),
       };
 

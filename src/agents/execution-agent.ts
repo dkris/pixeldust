@@ -26,6 +26,8 @@ export class ExecutionAgent extends BaseAgent {
 
     try {
       this.logger.info(`Executing tests across ${session.versions.length} versions`);
+      this.logger.debug(`Received containers data:`, data?.containers);
+      this.logger.debug(`Received test suites: ${testSuites.length}`);
 
       const allResults: TestResult[] = [];
 
@@ -69,7 +71,21 @@ export class ExecutionAgent extends BaseAgent {
     // Find container for this version
     const container = containers.find((c: any) => c.version === version);
     if (!container) {
-      throw new Error(`No container found for version ${version}`);
+      this.logger.error(`No container found for version ${version}`);
+      this.logger.error(`Available containers:`, containers);
+      throw new Error(
+        `No container found for version ${version}. ` +
+        `Available versions: ${containers.map((c: any) => c.version).join(', ')}`
+      );
+    }
+
+    // Validate container has valid port or URL
+    if (!container.url && (!container.port || isNaN(container.port))) {
+      this.logger.error(`Invalid container configuration for version ${version}:`, container);
+      throw new Error(
+        `Container for version ${version} has invalid port (${container.port}). ` +
+        `Container setup may have failed.`
+      );
     }
 
     // Use container.url for application mode, or construct baseUrl for framework mode
