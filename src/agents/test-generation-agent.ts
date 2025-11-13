@@ -475,23 +475,60 @@ Generate 6-8 comprehensive tests with representation from all categories.`;
 
       if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
         this.logger.warn(`No tool_use block found in AI response for ${component}`);
+        this.logger.debug(`Response content: ${JSON.stringify(response.content, null, 2)}`);
         throw new Error('AI did not use the generate_tests tool');
       }
 
-      const testsData = toolUseBlock.input as { tests: any[] };
+      // Log the tool input for debugging
+      this.logger.debug(`Tool input for ${component}: ${JSON.stringify(toolUseBlock.input, null, 2)}`);
 
-      if (!testsData.tests || !Array.isArray(testsData.tests)) {
-        this.logger.error(`Invalid tool input structure for ${component}`);
-        throw new Error('Tool input does not contain tests array');
+      const testsData = toolUseBlock.input as any;
+
+      // Handle various response formats
+      let testsArray: any[] = [];
+
+      if (testsData.tests && Array.isArray(testsData.tests)) {
+        // Standard format: { tests: [...] }
+        testsArray = testsData.tests;
+      } else if (Array.isArray(testsData)) {
+        // Direct array format: [...]
+        testsArray = testsData;
+      } else if (testsData.test_cases && Array.isArray(testsData.test_cases)) {
+        // Alternative format: { test_cases: [...] }
+        testsArray = testsData.test_cases;
+      } else {
+        // Try to find any array property
+        const arrayProp = Object.keys(testsData).find(key => Array.isArray(testsData[key]));
+        if (arrayProp) {
+          this.logger.warn(`Using alternative array property: ${arrayProp}`);
+          testsArray = testsData[arrayProp];
+        } else {
+          this.logger.error(`Invalid tool input structure for ${component}`);
+          this.logger.error(`Tool input: ${JSON.stringify(testsData, null, 2)}`);
+          throw new Error('Tool input does not contain tests array');
+        }
       }
 
-      const tests = testsData.tests.map((t: any) => ({
-        id: uuidv4(),
-        name: t.name || `${component} test`,
-        description: t.description || 'Test description',
-        code: t.code || this.getDefaultTestCode(component),
-        category: (t.category as TestCategory) || TestCategory.FUNCTIONAL,
-      }));
+      if (testsArray.length === 0) {
+        this.logger.warn(`AI returned empty tests array for ${component}`);
+        throw new Error('AI returned empty tests array');
+      }
+
+      const tests = testsArray.map((t: any, index: number) => {
+        // Validate and provide defaults for each test
+        const testName = t.name || t.test_name || `${component}-test-${index + 1}`;
+        const description = t.description || t.desc || `Test ${index + 1} for ${component}`;
+        const category = (t.category || t.test_category || 'FUNCTIONAL') as TestCategory;
+        const code = t.code || t.test_code || this.getDefaultTestCode(component);
+
+        return {
+          id: uuidv4(),
+          name: testName,
+          description,
+          code,
+          category,
+        };
+      });
 
       this.logger.info(`Successfully generated ${tests.length} tests for ${component}`);
       return tests;
