@@ -158,6 +158,9 @@ npx --yes http-server -p 3000 -s -c-1
       // Start container
       await dockerContainer.start();
 
+      // Wait a moment for Docker/Podman to assign the random port
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // Get container info
       const info = await dockerContainer.inspect();
 
