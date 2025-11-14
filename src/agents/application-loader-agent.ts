@@ -215,8 +215,8 @@ export class ApplicationLoaderAgent extends BaseAgent {
     this.logger.info('Waiting for application containers to be ready');
 
     const healthChecks = containers.map(async (container) => {
-      const maxRetries = 60; // 60 seconds total wait time
-      const retryDelay = 1000; // 1 second between retries
+      const maxRetries = 60; // 60 attempts
+      const retryDelay = 2000; // 2 seconds between retries = 2 minutes total
 
       for (let i = 0; i < maxRetries; i++) {
         try {
@@ -229,12 +229,19 @@ export class ApplicationLoaderAgent extends BaseAgent {
           const info = await dockerContainer.inspect();
 
           if (!info.State.Running) {
-            this.logger.warn(
-              `Container ${container.name} (${container.version}) not running, ` +
-              `retry ${i + 1}/${maxRetries}`
+            this.logger.error(`Container ${container.version} stopped running. Status: ${info.State.Status}`);
+            if (info.State.Error) {
+              this.logger.error(`Container error: ${info.State.Error}`);
+            }
+
+            // Get container logs for debugging
+            const logs = await this.getContainerLogs(dockerContainer);
+            this.logger.error(`Container logs for ${container.version}:\n${logs}`);
+
+            throw new Error(
+              `Container for ${container.version} stopped running (Status: ${info.State.Status}). ` +
+              `Please check the logs above for errors.`
             );
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
-            continue;
           }
 
           // Make HTTP request to verify application is responding
@@ -260,30 +267,61 @@ export class ApplicationLoaderAgent extends BaseAgent {
             // Connection errors are expected while application is starting
             if (i % 10 === 0) {
               // Log every 10 retries to avoid spam
-              this.logger.debug(
-                `Application ${container.version} not yet ready at ${container.url}: ` +
-                `${fetchError.message}, retry ${i + 1}/${maxRetries}`
+              this.logger.info(
+                `Attempt ${i + 1}/${maxRetries}: Waiting for ${container.version} at ${container.url}...`
               );
             }
           }
         } catch (error) {
+          // If we caught a real error (not just connection refused), re-throw it
+          if ((error as Error).message.includes('stopped running')) {
+            throw error;
+          }
+
           this.logger.warn(
-            `Health check failed for ${container.name}, retry ${i + 1}/${maxRetries}`
+            `Health check error for ${container.name}, retry ${i + 1}/${maxRetries}: ${(error as Error).message}`
           );
         }
 
         await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
 
+      // Health check timeout - get logs for debugging
+      if (!this.docker) {
+        throw new Error('Docker client not initialized');
+      }
+
+      const dockerContainer = this.docker.getContainer(container.id);
+      const logs = await this.getContainerLogs(dockerContainer);
+      this.logger.error(`Application ${container.version} failed health check. Container logs:\n${logs}`);
+
       throw new Error(
-        `Application ${container.version} failed to become ready after ${maxRetries} retries. ` +
+        `Application ${container.version} failed to become ready after ${maxRetries} retries (${maxRetries * retryDelay / 1000} seconds). ` +
         `The application may not have started correctly at ${container.url}. ` +
-        `Please check the container logs.`
+        `Please check the container logs above for build/startup errors.`
       );
     });
 
     await Promise.all(healthChecks);
     this.logger.info('All application containers are ready');
+  }
+
+  /**
+   * Get container logs for debugging
+   */
+  private async getContainerLogs(container: Dockerode.Container): Promise<string> {
+    try {
+      const logs = await container.logs({
+        stdout: true,
+        stderr: true,
+        tail: 100, // Last 100 lines
+      });
+
+      return logs.toString('utf-8');
+    } catch (error) {
+      this.logger.error('Failed to retrieve container logs', error as Error);
+      return 'Could not retrieve container logs';
+    }
   }
 
   private generateDockerfile(version: string, config: any): string {
