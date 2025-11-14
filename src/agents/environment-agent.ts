@@ -228,7 +228,7 @@ npx --yes http-server -p 3000 -s -c-1
     this.logger.info('Waiting for containers to be healthy');
 
     const healthChecks = containers.map(async (container) => {
-      const maxRetries = 30;
+      const maxRetries = 60; // Increased from 30 to allow more time for npm install
       const retryDelay = 1000;
 
       for (let i = 0; i < maxRetries; i++) {
@@ -236,11 +236,37 @@ npx --yes http-server -p 3000 -s -c-1
           const dockerContainer = this.docker!.getContainer(container.id);
           const info = await dockerContainer.inspect();
 
-          if (info.State.Running) {
-            // Simple health check: wait a bit for the service to start
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            this.logger.info(`Container ${container.name} is healthy`);
-            return;
+          if (!info.State.Running) {
+            this.logger.debug(`Container ${container.name} not yet running, retry ${i + 1}/${maxRetries}`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            continue;
+          }
+
+          // Container is running, now check if HTTP server is responding
+          const url = `http://localhost:${container.port}/`;
+
+          try {
+            const response = await fetch(url, {
+              method: 'GET',
+              signal: AbortSignal.timeout(5000), // 5 second timeout
+            });
+
+            if (response.ok || response.status === 404) {
+              // 200 OK or 404 Not Found both indicate server is responding
+              this.logger.info(`Container ${container.name} is healthy and responding on port ${container.port}`);
+              return;
+            } else {
+              this.logger.debug(
+                `Container ${container.name} responded with status ${response.status}, ` +
+                `retry ${i + 1}/${maxRetries}`
+              );
+            }
+          } catch (fetchError: any) {
+            // Connection errors are expected while server is starting
+            this.logger.debug(
+              `HTTP health check failed for ${container.name} on port ${container.port}: ` +
+              `${fetchError.message}, retry ${i + 1}/${maxRetries}`
+            );
           }
         } catch (error) {
           this.logger.warn(`Health check failed for ${container.name}, retry ${i + 1}/${maxRetries}`);
@@ -249,7 +275,10 @@ npx --yes http-server -p 3000 -s -c-1
         await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
 
-      throw new Error(`Container ${container.name} failed to become healthy`);
+      throw new Error(
+        `Container ${container.name} failed to become healthy after ${maxRetries} retries. ` +
+        `The application may not have started correctly on port ${container.port}.`
+      );
     });
 
     await Promise.all(healthChecks);

@@ -58,6 +58,9 @@ export class ApplicationLoaderAgent extends BaseAgent {
         containers.push(container);
       }
 
+      // Wait for all application containers to be healthy and responding
+      await this.waitForApplicationsReady(containers);
+
       this.logger.info(`Successfully loaded application for ${containers.length} versions`);
 
       return this.success({
@@ -203,6 +206,84 @@ export class ApplicationLoaderAgent extends BaseAgent {
       this.logger.error(`Failed to build application container for ${version}`, error as Error);
       throw error;
     }
+  }
+
+  /**
+   * Wait for application containers to be ready and responding to HTTP requests
+   */
+  private async waitForApplicationsReady(containers: any[]): Promise<void> {
+    this.logger.info('Waiting for application containers to be ready');
+
+    const healthChecks = containers.map(async (container) => {
+      const maxRetries = 60; // 60 seconds total wait time
+      const retryDelay = 1000; // 1 second between retries
+
+      for (let i = 0; i < maxRetries; i++) {
+        try {
+          // Check if container is still running
+          if (!this.docker) {
+            throw new Error('Docker client not initialized');
+          }
+
+          const dockerContainer = this.docker.getContainer(container.id);
+          const info = await dockerContainer.inspect();
+
+          if (!info.State.Running) {
+            this.logger.warn(
+              `Container ${container.name} (${container.version}) not running, ` +
+              `retry ${i + 1}/${maxRetries}`
+            );
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            continue;
+          }
+
+          // Make HTTP request to verify application is responding
+          try {
+            const response = await fetch(container.url, {
+              method: 'GET',
+              signal: AbortSignal.timeout(5000), // 5 second timeout
+            });
+
+            if (response.ok || response.status === 404) {
+              // 200 OK or 404 Not Found both indicate server is responding
+              this.logger.info(
+                `Application ${container.version} is ready and responding at ${container.url}`
+              );
+              return;
+            } else {
+              this.logger.debug(
+                `Application ${container.version} responded with status ${response.status}, ` +
+                `retry ${i + 1}/${maxRetries}`
+              );
+            }
+          } catch (fetchError: any) {
+            // Connection errors are expected while application is starting
+            if (i % 10 === 0) {
+              // Log every 10 retries to avoid spam
+              this.logger.debug(
+                `Application ${container.version} not yet ready at ${container.url}: ` +
+                `${fetchError.message}, retry ${i + 1}/${maxRetries}`
+              );
+            }
+          }
+        } catch (error) {
+          this.logger.warn(
+            `Health check failed for ${container.name}, retry ${i + 1}/${maxRetries}`
+          );
+        }
+
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
+
+      throw new Error(
+        `Application ${container.version} failed to become ready after ${maxRetries} retries. ` +
+        `The application may not have started correctly at ${container.url}. ` +
+        `Please check the container logs.`
+      );
+    });
+
+    await Promise.all(healthChecks);
+    this.logger.info('All application containers are ready');
   }
 
   private generateDockerfile(version: string, config: any): string {
