@@ -351,7 +351,7 @@ RUN ${appConfig.buildCommand}
 EXPOSE ${appConfig.port}
 
 # Start application
-CMD ${appConfig.startCommand}
+CMD ["sh", "-c", "${appConfig.startCommand}"]
 `.trim();
   }
 
