@@ -1,0 +1,6 @@
+{
+  "upgrade": {
+    "updatePeerDependencies": true,
+    "fixTests": true
+  }
+}
