@@ -183,7 +183,6 @@ export class ApplicationLoaderAgent extends BaseAgent {
           PortBindings: {
             [`${appConfig.port}/tcp`]: [{ HostPort: '0' }],
           },
-          AutoRemove: true,
         },
       });
 
