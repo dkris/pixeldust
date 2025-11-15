@@ -855,6 +855,10 @@ export class WebServer {
       const card = document.createElement('div');
       card.className = 'comparison-card';
 
+      const viewportStr = typeof snapshot.viewport === 'object'
+        ? \`\${snapshot.viewport.width}x\${snapshot.viewport.height}\`
+        : snapshot.viewport;
+
       card.innerHTML = \`
         <div class="comparison-header">
           <div class="component-name">\${snapshot.component}</div>
@@ -867,9 +871,20 @@ export class WebServer {
           </div>
           <div class="detail-box">
             <div class="detail-label">Viewport</div>
-            <div class="detail-value">\${snapshot.viewport}</div>
+            <div class="detail-value">\${viewportStr}</div>
           </div>
         </div>
+        \${snapshot.screenshotPath ? \`
+          <div style="margin-top: 15px;">
+            <img src="/api/snapshots/\${snapshot.id}/screenshot"
+                 alt="\${snapshot.component}"
+                 style="width: 100%; border-radius: 6px; border: 1px solid #30363d;"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+            <div style="display: none; text-align: center; padding: 40px; color: #8b949e;">
+              Screenshot not available
+            </div>
+          </div>
+        \` : ''}
       \`;
 
       return card;
