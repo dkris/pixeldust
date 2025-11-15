@@ -192,6 +192,10 @@ export class ConfigLoader {
         format: ['markdown', 'html'],
         outputPath: './reports',
       },
+      upgrade: {
+        updatePeerDependencies: true,
+        fixTests: true,
+      },
     };
   }
 }
