@@ -2,6 +2,7 @@ import { BaseAgent } from './base-agent';
 import { AgentType, AgentContext, AgentResult, TestSuite, Test, TestCategory } from '../types';
 import Anthropic from '@anthropic-ai/sdk';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import {
   getComponentPrefix,
   getImportPatterns,
@@ -9,6 +10,7 @@ import {
   isReactFramework,
   detectFrameworkType
 } from '../utils/framework-detector';
+import { DatabaseManager } from '../storage/database';
 
 /**
  * Test Generation Agent - AI-powered test generation
@@ -23,8 +25,8 @@ import {
 export class TestGenerationAgent extends BaseAgent {
   private ai: Anthropic;
 
-  constructor() {
-    super(AgentType.TEST_GENERATION);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.TEST_GENERATION, db);
     this.ai = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
@@ -306,14 +308,139 @@ export class TestGenerationAgent extends BaseAgent {
     return prefixMap[frameworkName] || 'ui5';
   }
 
+  /**
+   * Check if we should use cached tests or regenerate
+   */
+  private async shouldUseCachedTests(
+    component: string,
+    frameworkName: string,
+    frameworkVersion: string
+  ): Promise<boolean> {
+    if (!this.db) return false;
+
+    const cached = await this.db.getTestTemplate(component, frameworkName);
+    if (!cached) {
+      this.logger.debug(`No cached tests found for ${component}`);
+      return false;
+    }
+
+    // Check if version is compatible
+    // For now, simple check: if major version matches, use cache
+    // TODO: Implement proper semver range checking
+    if (cached.frameworkVersionRange) {
+      const cachedMajor = cached.frameworkVersionRange.split('.')[0];
+      const currentMajor = frameworkVersion.split('.')[0];
+
+      if (cachedMajor !== currentMajor) {
+        this.logger.info(`Cached tests for ${component} are for different major version (${cached.frameworkVersionRange} vs ${frameworkVersion}), regenerating`);
+        return false;
+      }
+    }
+
+    // Check if tests are stale (older than 30 days)
+    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    if (cached.createdAt.getTime() < thirtyDaysAgo) {
+      this.logger.info(`Cached tests for ${component} are stale (>30 days old), regenerating`);
+      return false;
+    }
+
+    this.logger.info(`Using cached tests for ${component} (used ${cached.usageCount} times)`);
+    return true;
+  }
+
+  /**
+   * Get cached tests if available
+   */
+  private async getCachedTests(component: string, frameworkName: string): Promise<Test[] | null> {
+    if (!this.db) return null;
+
+    const cached = await this.db.getTestTemplate(component, frameworkName);
+    if (!cached) return null;
+
+    // Update usage statistics
+    await this.db.updateTestTemplateUsage(cached.id);
+
+    // Parse tests from cached code
+    const tests = JSON.parse(cached.testCode);
+    this.logger.info(`Retrieved ${tests.length} cached tests for ${component}`);
+
+    // Store in memory for this session
+    await this.storeMemory(`cached_tests_${component}`, {
+      count: tests.length,
+      usageCount: cached.usageCount + 1,
+      lastUsed: new Date()
+    }, { memoryType: 'short_term' });
+
+    return tests;
+  }
+
+  /**
+   * Cache generated tests for future use
+   */
+  private async cacheTests(
+    component: string,
+    frameworkName: string,
+    frameworkVersion: string,
+    tests: Test[]
+  ): Promise<void> {
+    if (!this.db) return;
+
+    // Serialize tests
+    const testCode = JSON.stringify(tests);
+
+    // Generate hash of test content
+    const hash = crypto.createHash('sha256').update(testCode).digest('hex');
+
+    // Determine version range (major version)
+    const majorVersion = frameworkVersion.split('.')[0];
+    const versionRange = `${majorVersion}.x.x`;
+
+    // Save to database
+    await this.db.saveTestTemplate({
+      id: uuidv4(),
+      component,
+      frameworkName,
+      frameworkVersionRange: versionRange,
+      testCode,
+      testMetadata: {
+        count: tests.length,
+        categories: tests.map(t => t.category),
+        generatedAt: new Date().toISOString(),
+      },
+      hash,
+    });
+
+    this.logger.info(`Cached ${tests.length} tests for ${component} (hash: ${hash.substring(0, 8)})`);
+  }
+
+  /**
+   * Generate a hash for test content
+   */
+  private hashTestContent(content: string): string {
+    return crypto.createHash('sha256').update(content).digest('hex');
+  }
+
   private async generateTestsForComponent(component: string, config: any, workflowData: any = null): Promise<Test[]> {
+    const frameworkName = config.framework.name;
+    const frameworkVersion = config.versions?.[0] || config.framework.versions?.[0] || '1.0.0';
+
+    // Check if we should use cached tests (unless --force-regenerate flag is set)
+    const forceRegenerate = config.forceRegenerateTests || false;
+
+    if (!forceRegenerate && await this.shouldUseCachedTests(component, frameworkName, frameworkVersion)) {
+      const cachedTests = await this.getCachedTests(component, frameworkName);
+      if (cachedTests) {
+        return cachedTests;
+      }
+    }
+
     // Determine if we're in application mode or framework-only mode
     const isApplicationMode = !!config.application;
 
     let prompt: string;
 
     if (isApplicationMode) {
-      // Build workflow context if available
+      // Build optimized workflow context if available (reduced token usage)
       let workflowContext = '';
       if (workflowData) {
         const componentUsage = workflowData.componentUsage?.find((u: any) => u.tag === component);
@@ -325,96 +452,65 @@ export class TestGenerationAgent extends BaseAgent {
         ) || [];
 
         if (componentUsage || relevantWorkflows.length > 0 || relevantPages.length > 0) {
-          workflowContext = `\n\nWORKFLOW CONTEXT (discovered from application):`;
+          workflowContext = `\n\nCONTEXT:`;
 
+          // Concise usage summary
           if (componentUsage) {
-            workflowContext += `\n- ${component} is used on ${componentUsage.pageCount} page(s): ${componentUsage.pages.join(', ')}`;
-            workflowContext += `\n- Total instances: ${componentUsage.totalInstances}`;
+            workflowContext += `\n- Used on ${componentUsage.pageCount} page(s), ${componentUsage.totalInstances} instances`;
             if (componentUsage.patterns.length > 0) {
-              workflowContext += `\n- Common patterns: ${componentUsage.patterns.join(', ')}`;
+              // Only include top 2 patterns to reduce tokens
+              workflowContext += `\n- Patterns: ${componentUsage.patterns.slice(0, 2).join(', ')}`;
             }
           }
 
+          // Only include top 2 most relevant pages
           if (relevantPages.length > 0) {
-            workflowContext += `\n\nPages containing ${component}:`;
-            relevantPages.slice(0, 3).forEach((page: any) => {
-              const comp = page.components.find((c: any) => c.tag === component);
-              workflowContext += `\n- "${page.title}" (${page.url}): ${comp.count} instance(s)`;
-            });
+            workflowContext += `\n- Pages: `;
+            const topPages = relevantPages.slice(0, 2);
+            workflowContext += topPages.map((p: any) => `${p.url}`).join(', ');
           }
 
+          // Only include highest priority workflow
           if (relevantWorkflows.length > 0) {
-            workflowContext += `\n\nRelevant Workflows:`;
-            relevantWorkflows.slice(0, 2).forEach((workflow: any) => {
-              workflowContext += `\n- "${workflow.name}" (Priority: ${workflow.priority})`;
-              workflow.steps.slice(0, 3).forEach((step: any) => {
-                if (step.action) {
-                  workflowContext += `\n  ${step.order}. ${step.action.description}`;
-                }
-              });
-            });
+            const topWorkflow = relevantWorkflows[0];
+            workflowContext += `\n- Workflow: "${topWorkflow.name}" (${topWorkflow.priority})`;
           }
         }
       }
 
-      // Application-aware test generation with workflow context
-      prompt = `Generate comprehensive test scenarios for the "${component}" web component IN THE CONTEXT of a real application.
+      // Application-aware test generation with optimized prompt
+      prompt = `Generate tests for "${component}" in application context.${workflowContext}
 
-IMPORTANT: These tests will run against the actual application at ${config.application.path}, NOT standalone components.${workflowContext}
+Categories (balanced):
+1. Functional (40%): User interactions, workflows
+2. Visual (25%): Rendering, layout
+3. Accessibility (20%): ARIA, keyboard nav
+4. Performance (15%): Load time, responsiveness
 
-Generate tests in the following categories with balanced distribution:
-1. Functional tests (40%) - Test how ${component} works within the application's features
-   - Navigate to pages where ${component} is used
-   - Test interactions in the context of real workflows
-   - Verify component behavior affects application state correctly
+Each test needs:
+- Name (kebab-case, e.g., "${component}-form-submit")
+- Description (what it tests)
+- Category (one of four above)
+- Playwright code (navigate to real pages)
 
-2. Visual tests (25%) - Verify ${component} renders correctly in the application
-   - Test in real page layouts, not isolation
-   - Verify styling matches application theme
-   - Check responsiveness within actual pages
-
-3. Accessibility tests (20%) - Test a11y in application context
-   - ARIA attributes work with application flow
-   - Keyboard navigation works in real scenarios
-   - Screen reader support in actual user journeys
-
-4. Performance tests (15%) - Measure performance in application
-   - Page load time with ${component}
-   - Interaction responsiveness in real workflows
-   - Resource usage in application context
-
-For each test, provide:
-- A unique descriptive name (kebab-case) that reflects the application context
-- Clear description of what application functionality is being tested
-- Category that matches one of the four above
-- Complete Playwright test code that navigates to the actual pages where the component is used
-
-Example test names:
-- "${component}-login-form-submission" (not just "button-click")
-- "${component}-dashboard-data-display" (not just "table-renders")
-
-Generate 6-8 tests that verify the component works correctly within the application's real workflows.`;
+Generate 6-8 tests for application workflows.`;
     } else {
-      // Framework-only mode (existing behavior)
-      prompt = `Generate comprehensive test scenarios for the "${component}" web component.
+      // Framework-only mode with optimized prompt
+      prompt = `Generate tests for "${component}" web component.
 
-Generate tests in the following categories with balanced distribution:
-1. Functional tests (40%) - User interactions, state changes, behavior verification
-2. Visual tests (25%) - Screenshot capture, rendering verification, layout checks
-3. Accessibility tests (20%) - ARIA attributes, keyboard navigation, screen reader support
-4. Performance tests (15%) - Rendering speed, interaction responsiveness, resource usage
+Categories (balanced, at least one each):
+1. Functional (40%): Interactions, state, behavior
+2. Visual (25%): Rendering, layout
+3. Accessibility (20%): ARIA, keyboard, screen reader
+4. Performance (15%): Speed, responsiveness
 
-IMPORTANT: Include at least ONE test from each category to ensure balanced coverage.
+Each test:
+- Name (kebab-case with component)
+- Description
+- Category
+- Playwright code
 
-For each test, provide:
-- A unique descriptive name (kebab-case) that includes the component name
-- Clear description of what the test verifies
-- Category that matches one of the four above
-- Complete Playwright test code
-
-The component will be tested across multiple versions, so focus on core functionality that should remain consistent.
-
-Generate 6-8 comprehensive tests with representation from all categories.`;
+Focus on core functionality for version testing. Generate 6-8 tests.`;
     }
 
     try {
@@ -531,6 +627,10 @@ Generate 6-8 comprehensive tests with representation from all categories.`;
       });
 
       this.logger.info(`Successfully generated ${tests.length} tests for ${component}`);
+
+      // Cache the generated tests for future use
+      await this.cacheTests(component, frameworkName, frameworkVersion, tests);
+
       return tests;
 
     } catch (error) {

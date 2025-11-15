@@ -142,6 +142,55 @@ export class DatabaseManager {
       )
     `);
 
+    // Create test_templates table for test caching
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS test_templates (
+        id TEXT PRIMARY KEY,
+        component TEXT NOT NULL,
+        framework_name TEXT NOT NULL,
+        framework_version_range TEXT,
+        test_code TEXT NOT NULL,
+        test_metadata TEXT,
+        hash TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER NOT NULL,
+        usage_count INTEGER DEFAULT 1,
+        UNIQUE(component, framework_name, hash)
+      )
+    `);
+
+    // Create agent_memory table for persistent agent memory
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_memory (
+        id TEXT PRIMARY KEY,
+        agent_type TEXT NOT NULL,
+        session_id TEXT,
+        memory_type TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        context TEXT,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        UNIQUE(agent_type, key)
+      )
+    `);
+
+    // Create agent_executions table for observability
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_executions (
+        id TEXT PRIMARY KEY,
+        agent_type TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        tokens_used INTEGER,
+        success INTEGER NOT NULL,
+        error TEXT,
+        metrics TEXT,
+        executed_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id)
+      )
+    `);
+
     // Create indices
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_sessions_state ON sessions(state);
@@ -158,6 +207,13 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_snapshot_comparisons_component ON snapshot_comparisons(component);
       CREATE INDEX IF NOT EXISTS idx_evaluations_session ON evaluations(session_id);
       CREATE INDEX IF NOT EXISTS idx_evaluations_agent_type ON evaluations(agent_type);
+      CREATE INDEX IF NOT EXISTS idx_test_templates_component ON test_templates(component);
+      CREATE INDEX IF NOT EXISTS idx_test_templates_framework ON test_templates(framework_name);
+      CREATE INDEX IF NOT EXISTS idx_test_templates_hash ON test_templates(hash);
+      CREATE INDEX IF NOT EXISTS idx_agent_memory_type ON agent_memory(agent_type);
+      CREATE INDEX IF NOT EXISTS idx_agent_memory_key ON agent_memory(key);
+      CREATE INDEX IF NOT EXISTS idx_agent_executions_session ON agent_executions(session_id);
+      CREATE INDEX IF NOT EXISTS idx_agent_executions_agent_type ON agent_executions(agent_type);
     `);
   }
 
@@ -685,6 +741,269 @@ export class DatabaseManager {
       feedback: JSON.parse(row.feedback),
       timestamp: new Date(row.timestamp),
     };
+  }
+
+  // ============================================================================
+  // Test Template Operations (for test caching)
+  // ============================================================================
+
+  saveTestTemplate(template: {
+    id: string;
+    component: string;
+    frameworkName: string;
+    frameworkVersionRange?: string;
+    testCode: string;
+    testMetadata?: any;
+    hash: string;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO test_templates (
+        id, component, framework_name, framework_version_range,
+        test_code, test_metadata, hash, created_at, last_used_at, usage_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
+        COALESCE((SELECT usage_count + 1 FROM test_templates WHERE id = ?), 1)
+      )
+    `);
+
+    const now = Date.now();
+    stmt.run(
+      template.id,
+      template.component,
+      template.frameworkName,
+      template.frameworkVersionRange || null,
+      template.testCode,
+      template.testMetadata ? JSON.stringify(template.testMetadata) : null,
+      template.hash,
+      now,
+      now,
+      template.id
+    );
+  }
+
+  getTestTemplate(component: string, frameworkName: string): any | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM test_templates
+      WHERE component = ? AND framework_name = ?
+      ORDER BY last_used_at DESC
+      LIMIT 1
+    `);
+    const row = stmt.get(component, frameworkName) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      component: row.component,
+      frameworkName: row.framework_name,
+      frameworkVersionRange: row.framework_version_range,
+      testCode: row.test_code,
+      testMetadata: row.test_metadata ? JSON.parse(row.test_metadata) : null,
+      hash: row.hash,
+      createdAt: new Date(row.created_at),
+      lastUsedAt: new Date(row.last_used_at),
+      usageCount: row.usage_count,
+    };
+  }
+
+  updateTestTemplateUsage(id: string): void {
+    const stmt = this.db.prepare(`
+      UPDATE test_templates
+      SET last_used_at = ?, usage_count = usage_count + 1
+      WHERE id = ?
+    `);
+    stmt.run(Date.now(), id);
+  }
+
+  getTestTemplateStats(): any {
+    const stmt = this.db.prepare(`
+      SELECT
+        COUNT(*) as total_templates,
+        SUM(usage_count) as total_uses,
+        AVG(usage_count) as avg_uses_per_template
+      FROM test_templates
+    `);
+    return stmt.get();
+  }
+
+  // ============================================================================
+  // Agent Memory Operations
+  // ============================================================================
+
+  storeMemory(memory: {
+    id: string;
+    agentType: string;
+    sessionId?: string;
+    memoryType: 'short_term' | 'long_term' | 'episodic';
+    key: string;
+    value: any;
+    context?: any;
+    expiresAt?: number;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO agent_memory (
+        id, agent_type, session_id, memory_type, key, value, context, created_at, expires_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      memory.id,
+      memory.agentType,
+      memory.sessionId || null,
+      memory.memoryType,
+      memory.key,
+      JSON.stringify(memory.value),
+      memory.context ? JSON.stringify(memory.context) : null,
+      Date.now(),
+      memory.expiresAt || null
+    );
+  }
+
+  recallMemory(agentType: string, key: string): any | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM agent_memory
+      WHERE agent_type = ? AND key = ?
+      AND (expires_at IS NULL OR expires_at > ?)
+    `);
+    const row = stmt.get(agentType, key, Date.now()) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      agentType: row.agent_type,
+      sessionId: row.session_id,
+      memoryType: row.memory_type,
+      key: row.key,
+      value: JSON.parse(row.value),
+      context: row.context ? JSON.parse(row.context) : null,
+      createdAt: new Date(row.created_at),
+      expiresAt: row.expires_at ? new Date(row.expires_at) : null,
+    };
+  }
+
+  recallMemoriesByType(agentType: string, memoryType: string): any[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM agent_memory
+      WHERE agent_type = ? AND memory_type = ?
+      AND (expires_at IS NULL OR expires_at > ?)
+      ORDER BY created_at DESC
+    `);
+    const rows = stmt.all(agentType, memoryType, Date.now()) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      agentType: row.agent_type,
+      sessionId: row.session_id,
+      memoryType: row.memory_type,
+      key: row.key,
+      value: JSON.parse(row.value),
+      context: row.context ? JSON.parse(row.context) : null,
+      createdAt: new Date(row.created_at),
+      expiresAt: row.expires_at ? new Date(row.expires_at) : null,
+    }));
+  }
+
+  clearExpiredMemories(): number {
+    const stmt = this.db.prepare(`
+      DELETE FROM agent_memory WHERE expires_at IS NOT NULL AND expires_at < ?
+    `);
+    const result = stmt.run(Date.now());
+    return result.changes;
+  }
+
+  // ============================================================================
+  // Agent Execution Tracking (for observability)
+  // ============================================================================
+
+  trackAgentExecution(execution: {
+    id: string;
+    agentType: string;
+    sessionId: string;
+    durationMs: number;
+    tokensUsed?: number;
+    success: boolean;
+    error?: string;
+    metrics?: any;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO agent_executions (
+        id, agent_type, session_id, duration_ms, tokens_used,
+        success, error, metrics, executed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      execution.id,
+      execution.agentType,
+      execution.sessionId,
+      execution.durationMs,
+      execution.tokensUsed || null,
+      execution.success ? 1 : 0,
+      execution.error || null,
+      execution.metrics ? JSON.stringify(execution.metrics) : null,
+      Date.now()
+    );
+  }
+
+  getAgentExecutions(sessionId: string, agentType?: string): any[] {
+    let stmt;
+    let rows;
+
+    if (agentType) {
+      stmt = this.db.prepare(`
+        SELECT * FROM agent_executions
+        WHERE session_id = ? AND agent_type = ?
+        ORDER BY executed_at DESC
+      `);
+      rows = stmt.all(sessionId, agentType);
+    } else {
+      stmt = this.db.prepare(`
+        SELECT * FROM agent_executions
+        WHERE session_id = ?
+        ORDER BY executed_at DESC
+      `);
+      rows = stmt.all(sessionId);
+    }
+
+    return (rows as any[]).map(row => ({
+      id: row.id,
+      agentType: row.agent_type,
+      sessionId: row.session_id,
+      durationMs: row.duration_ms,
+      tokensUsed: row.tokens_used,
+      success: row.success === 1,
+      error: row.error,
+      metrics: row.metrics ? JSON.parse(row.metrics) : null,
+      executedAt: new Date(row.executed_at),
+    }));
+  }
+
+  getAgentPerformanceStats(sessionId?: string): any {
+    const query = sessionId
+      ? `SELECT
+          agent_type,
+          COUNT(*) as execution_count,
+          AVG(duration_ms) as avg_duration_ms,
+          SUM(tokens_used) as total_tokens,
+          AVG(tokens_used) as avg_tokens,
+          SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count,
+          SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failure_count
+        FROM agent_executions
+        WHERE session_id = ?
+        GROUP BY agent_type`
+      : `SELECT
+          agent_type,
+          COUNT(*) as execution_count,
+          AVG(duration_ms) as avg_duration_ms,
+          SUM(tokens_used) as total_tokens,
+          AVG(tokens_used) as avg_tokens,
+          SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count,
+          SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failure_count
+        FROM agent_executions
+        GROUP BY agent_type`;
+
+    const stmt = this.db.prepare(query);
+    return sessionId ? stmt.all(sessionId) : stmt.all();
   }
 
   close(): void {
