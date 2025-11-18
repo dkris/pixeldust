@@ -3,6 +3,7 @@ import { AgentType, AgentContext, AgentResult, Container, ContainerStatus } from
 import Dockerode from 'dockerode';
 import { v4 as uuidv4 } from 'uuid';
 import { ContainerRuntimeManager } from '../utils/container-runtime';
+import { DatabaseManager } from '../storage/database';
 
 /**
  * Environment Agent - Manages container lifecycle for version testing
@@ -22,48 +23,50 @@ export class EnvironmentAgent extends BaseAgent {
   private runtime: 'docker' | 'podman' = 'docker';
   private isRootless: boolean = false;
 
-  constructor() {
-    super(AgentType.ENVIRONMENT);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.ENVIRONMENT, db);
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session } = context;
+    return this.executeWithTracking(context, async () => {
+      const { config, session } = context;
 
-    try {
-      // Initialize container runtime (Docker or Podman)
-      await this.initializeRuntime(config.containers.runtime);
+      try {
+        // Initialize container runtime (Docker or Podman)
+        await this.initializeRuntime(config.containers.runtime);
 
-      this.logger.info(`Setting up environments for ${session.versions.length} versions using ${this.runtime}`);
+        this.logger.info(`Setting up environments for ${session.versions.length} versions using ${this.runtime}`);
 
-      const containers: Container[] = [];
+        const containers: Container[] = [];
 
-      // Create a container for each version
-      for (const version of session.versions) {
-        const container = await this.createContainer(version, config);
-        containers.push(container);
-        this.containers.set(version, container);
-      }
+        // Create a container for each version
+        for (const version of session.versions) {
+          const container = await this.createContainer(version, config);
+          containers.push(container);
+          this.containers.set(version, container);
+        }
 
-      // Wait for all containers to be healthy
-      await this.waitForHealthy(containers);
+        // Wait for all containers to be healthy
+        await this.waitForHealthy(containers);
 
-      this.logger.info('All containers are ready');
+        this.logger.info('All containers are ready');
 
-      return this.success({
-        containers: containers.map(c => ({
-          version: c.version,
-          id: c.id,
-          ipAddress: c.ipAddress,
-          port: c.port,
+        return this.success({
+          containers: containers.map(c => ({
+            version: c.version,
+            id: c.id,
+            ipAddress: c.ipAddress,
+            port: c.port,
+            runtime: this.runtime,
+          })),
           runtime: this.runtime,
-        })),
-        runtime: this.runtime,
-        isRootless: this.isRootless,
-      });
-    } catch (error) {
-      await this.cleanup();
-      return this.failure(error as Error);
-    }
+          isRootless: this.isRootless,
+        });
+      } catch (error) {
+        await this.cleanup();
+        return this.failure(error as Error);
+      }
+    });
   }
 
   /**

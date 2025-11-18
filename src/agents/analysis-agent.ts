@@ -17,6 +17,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { JSDOM } from 'jsdom';
 import { v4 as uuidv4 } from 'uuid';
+import { DatabaseManager } from '../storage/database';
 
 /**
  * Analysis Agent - Compares results across versions
@@ -29,47 +30,49 @@ import { v4 as uuidv4 } from 'uuid';
  * - Generate detailed difference reports
  */
 export class AnalysisAgent extends BaseAgent {
-  constructor() {
-    super(AgentType.ANALYSIS);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.ANALYSIS, db);
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session, data } = context;
-    const testResults = data?.results || [];
+    return this.executeWithTracking(context, async () => {
+      const { config, session, data } = context;
+      const testResults = data?.results || [];
 
-    try {
-      this.logger.info('Analyzing differences between versions');
+      try {
+        this.logger.info('Analyzing differences between versions');
 
-      const comparisons: ComparisonResult[] = [];
+        const comparisons: ComparisonResult[] = [];
 
-      // Compare each version against the baseline (first version)
-      const baselineVersion = session.versions[0];
+        // Compare each version against the baseline (first version)
+        const baselineVersion = session.versions[0];
 
-      for (let i = 1; i < session.versions.length; i++) {
-        const targetVersion = session.versions[i];
+        for (let i = 1; i < session.versions.length; i++) {
+          const targetVersion = session.versions[i];
 
-        this.logger.info(`Comparing ${baselineVersion} → ${targetVersion}`);
+          this.logger.info(`Comparing ${baselineVersion} → ${targetVersion}`);
 
-        const comparison = await this.compareVersions(
-          baselineVersion,
-          targetVersion,
-          testResults,
-          config,
-          session.id
-        );
+          const comparison = await this.compareVersions(
+            baselineVersion,
+            targetVersion,
+            testResults,
+            config,
+            session.id
+          );
 
-        comparisons.push(comparison);
+          comparisons.push(comparison);
+        }
+
+        this.logger.info(`Generated ${comparisons.length} comparison reports`);
+
+        return this.success({
+          comparisons,
+          differences: comparisons.flatMap(c => c.differences),
+        });
+      } catch (error) {
+        return this.failure(error as Error);
       }
-
-      this.logger.info(`Generated ${comparisons.length} comparison reports`);
-
-      return this.success({
-        comparisons,
-        differences: comparisons.flatMap(c => c.differences),
-      });
-    } catch (error) {
-      return this.failure(error as Error);
-    }
+    });
   }
 
   private async compareVersions(

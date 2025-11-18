@@ -44,57 +44,59 @@ export class TestGenerationAgent extends BaseAgent {
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session } = context;
+    return this.executeWithTracking(context, async () => {
+      const { config, session } = context;
 
-    try {
-      this.logger.info('Generating test suites');
+      try {
+        this.logger.info('Generating test suites');
 
-      const testSuites: TestSuite[] = [];
+        const testSuites: TestSuite[] = [];
 
-      // Check if workflow data is available via layered context/retrieval
-      const workflowData = this.getWorkflowData(context);
-      if (workflowData) {
-        this.logger.info(`Using workflow data: ${workflowData.pages.length} pages, ${workflowData.workflows.length} workflows`);
+        // Check if workflow data is available via layered context/retrieval
+        const workflowData = this.getWorkflowData(context);
+        if (workflowData) {
+          this.logger.info(`Using workflow data: ${workflowData.pages.length} pages, ${workflowData.workflows.length} workflows`);
+        }
+
+        // Get list of components to test
+        const components = await this.discoverComponents(config, workflowData);
+
+        // Filter out empty or invalid component names
+        const validComponents = components.filter(c => c && c.trim().length > 0);
+
+        if (validComponents.length === 0) {
+          throw new Error('No valid components found to test');
+        }
+
+        this.logger.info(`Found ${validComponents.length} valid components to test`);
+
+        for (const component of validComponents) {
+          this.logger.info(`Generating tests for component: ${component}`);
+
+          const tests = await this.generateTestsForComponent(component, config, workflowData, context);
+
+          const testSuite: TestSuite = {
+            id: uuidv4(),
+            sessionId: session.id,
+            version: 'all', // Tests are version-agnostic
+            component,
+            tests,
+            generatedAt: new Date(),
+          };
+
+          testSuites.push(testSuite);
+        }
+
+        this.logger.info(`Generated ${testSuites.length} test suites`);
+
+        return this.success({
+          testSuites,
+          totalTests: testSuites.reduce((sum, suite) => sum + suite.tests.length, 0),
+        });
+      } catch (error) {
+        return this.failure(error as Error);
       }
-
-      // Get list of components to test
-      const components = await this.discoverComponents(config, workflowData);
-
-      // Filter out empty or invalid component names
-      const validComponents = components.filter(c => c && c.trim().length > 0);
-
-      if (validComponents.length === 0) {
-        throw new Error('No valid components found to test');
-      }
-
-      this.logger.info(`Found ${validComponents.length} valid components to test`);
-
-      for (const component of validComponents) {
-        this.logger.info(`Generating tests for component: ${component}`);
-
-        const tests = await this.generateTestsForComponent(component, config, workflowData, context);
-
-        const testSuite: TestSuite = {
-          id: uuidv4(),
-          sessionId: session.id,
-          version: 'all', // Tests are version-agnostic
-          component,
-          tests,
-          generatedAt: new Date(),
-        };
-
-        testSuites.push(testSuite);
-      }
-
-      this.logger.info(`Generated ${testSuites.length} test suites`);
-
-      return this.success({
-        testSuites,
-        totalTests: testSuites.reduce((sum, suite) => sum + suite.tests.length, 0),
-      });
-    } catch (error) {
-      return this.failure(error as Error);
-    }
+    });
   }
 
   private async discoverComponents(config: any, workflowData: WorkflowDiscoveryResult | null = null): Promise<string[]> {

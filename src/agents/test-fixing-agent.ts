@@ -6,6 +6,7 @@ import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { DatabaseManager } from '../storage/database';
 
 const execAsync = promisify(exec);
 
@@ -56,82 +57,84 @@ export class TestFixingAgent extends BaseAgent {
   private ai: Anthropic;
   private maxIterations = 3;
 
-  constructor() {
-    super(AgentType.TEST_FIXING);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.TEST_FIXING, db);
     this.ai = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session, data } = context;
+    return this.executeWithTracking(context, async () => {
+      const { config, session, data } = context;
 
-    if (!config.application) {
-      this.logger.info('No application configuration, skipping test fixing');
-      return this.success({ skipped: true });
-    }
-
-    if (!config.upgrade?.fixTests) {
-      this.logger.info('Test fixing disabled in configuration');
-      return this.success({ skipped: true, reason: 'disabled' });
-    }
-
-    const appPath = config.application.path;
-    const testCommand = config.application.testCommand || 'npm test';
-
-    try {
-      this.logger.info('Starting test fixing process');
-
-      let iteration = 0;
-      let allFixed = false;
-      const allFixes: TestFix[] = [];
-
-      while (iteration < this.maxIterations && !allFixed) {
-        iteration++;
-        this.logger.info(`Test fixing iteration ${iteration}/${this.maxIterations}`);
-
-        // 1. Run tests
-        const testResults = await this.runTests(appPath, testCommand);
-
-        if (testResults.allPassed) {
-          this.logger.info('All tests passing!');
-          allFixed = true;
-          break;
-        }
-
-        this.logger.info(
-          `Found ${testResults.failed} failing tests (${testResults.passed} passing)`
-        );
-
-        // 2. Generate fixes for each failure
-        const fixes = await this.generateFixes(testResults.failures, context);
-        allFixes.push(...fixes);
-
-        // 3. Apply fixes
-        for (const fix of fixes) {
-          await this.applyFix(fix, appPath);
-        }
-
-        this.logger.info(`Applied ${fixes.length} fixes, re-running tests...`);
+      if (!config.application) {
+        this.logger.info('No application configuration, skipping test fixing');
+        return this.success({ skipped: true });
       }
 
-      // Final test run
-      const finalResults = await this.runTests(appPath, testCommand);
+      if (!config.upgrade?.fixTests) {
+        this.logger.info('Test fixing disabled in configuration');
+        return this.success({ skipped: true, reason: 'disabled' });
+      }
 
-      return this.success({
-        iterations: iteration,
-        totalFixes: allFixes.length,
-        finalResults: {
-          total: finalResults.total,
-          passed: finalResults.passed,
-          failed: finalResults.failed,
-          allPassed: finalResults.allPassed,
-        },
-        fixes: allFixes,
-      });
-    } catch (error) {
-      return this.failure(error as Error);
-    }
+      const appPath = config.application.path;
+      const testCommand = config.application.testCommand || 'npm test';
+
+      try {
+        this.logger.info('Starting test fixing process');
+
+        let iteration = 0;
+        let allFixed = false;
+        const allFixes: TestFix[] = [];
+
+        while (iteration < this.maxIterations && !allFixed) {
+          iteration++;
+          this.logger.info(`Test fixing iteration ${iteration}/${this.maxIterations}`);
+
+          // 1. Run tests
+          const testResults = await this.runTests(appPath, testCommand);
+
+          if (testResults.allPassed) {
+            this.logger.info('All tests passing!');
+            allFixed = true;
+            break;
+          }
+
+          this.logger.info(
+            `Found ${testResults.failed} failing tests (${testResults.passed} passing)`
+          );
+
+          // 2. Generate fixes for each failure
+          const fixes = await this.generateFixes(testResults.failures, context);
+          allFixes.push(...fixes);
+
+          // 3. Apply fixes
+          for (const fix of fixes) {
+            await this.applyFix(fix, appPath);
+          }
+
+          this.logger.info(`Applied ${fixes.length} fixes, re-running tests...`);
+        }
+
+        // Final test run
+        const finalResults = await this.runTests(appPath, testCommand);
+
+        return this.success({
+          iterations: iteration,
+          totalFixes: allFixes.length,
+          finalResults: {
+            total: finalResults.total,
+            passed: finalResults.passed,
+            failed: finalResults.failed,
+            allPassed: finalResults.allPassed,
+          },
+          fixes: allFixes,
+        });
+      } catch (error) {
+        return this.failure(error as Error);
+      }
+    });
   }
 
   private async runTests(appPath: string, testCommand: string): Promise<TestResults> {

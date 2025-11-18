@@ -14,6 +14,7 @@ import {
 import { chromium, Browser, Page as PlaywrightPage } from 'playwright';
 import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import { DatabaseManager } from '../storage/database';
 
 /**
  * Workflow Discovery Agent - Crawls application to discover pages and workflows
@@ -33,111 +34,113 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
   private maxPages: number = 50;
   private frameworkPrefix: string = 'ui5';
 
-  constructor() {
-    super(AgentType.WORKFLOW_DISCOVERY);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.WORKFLOW_DISCOVERY, db);
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, data } = context;
+    return this.executeWithTracking(context, async () => {
+      const { config, data } = context;
 
-    // Only run workflow discovery in application mode
-    if (!config.application) {
-      this.logger.info('Skipping workflow discovery (framework-only mode)');
-      return this.success({ mode: 'framework-only', workflows: [], pages: [] });
-    }
-
-    try {
-      this.logger.info('Starting workflow discovery');
-
-      // Get application URL from containers or application config
-      const applicationUrl = this.getApplicationUrl(data, config);
-      if (!applicationUrl) {
-        throw new Error('No application URL available for workflow discovery');
+      // Only run workflow discovery in application mode
+      if (!config.application) {
+        this.logger.info('Skipping workflow discovery (framework-only mode)');
+        return this.success({ mode: 'framework-only', workflows: [], pages: [] });
       }
 
-      this.logger.info(`Crawling application: ${applicationUrl}`);
+      try {
+        this.logger.info('Starting workflow discovery');
 
-      // Determine framework prefix for component detection
-      this.frameworkPrefix = this.getFrameworkPrefix(config.framework.name);
+        // Get application URL from containers or application config
+        const applicationUrl = this.getApplicationUrl(data, config);
+        if (!applicationUrl) {
+          throw new Error('No application URL available for workflow discovery');
+        }
 
-      // Launch browser
-      this.browser = await chromium.launch({
-        headless: config.testing.headless !== false,
-      });
+        this.logger.info(`Crawling application: ${applicationUrl}`);
 
-      // Crawl application starting from root
-      await this.crawlApplication(applicationUrl, 0);
+        // Determine framework prefix for component detection
+        this.frameworkPrefix = this.getFrameworkPrefix(config.framework.name);
 
-      // Build workflows from discovered pages
-      const workflows = await this.buildWorkflows();
+        // Launch browser
+        this.browser = await chromium.launch({
+          headless: config.testing.headless !== false,
+        });
 
-      // Generate component usage summary
-      const componentUsage = this.analyzeComponentUsage();
+        // Crawl application starting from root
+        await this.crawlApplication(applicationUrl, 0);
 
-      const result: WorkflowDiscoveryResult = {
-        pages: this.discoveredPages,
-        workflows,
-        componentUsage,
-        discoveredAt: new Date(),
-        applicationUrl,
-      };
+        // Build workflows from discovered pages
+        const workflows = await this.buildWorkflows();
 
-      // Publish layered context artifacts for downstream agents
-      context.layers.set('shared', 'workflow.pages', result.pages, { ttlMs: 10 * 60 * 1000 });
-      context.layers.set('shared', 'workflow.workflows', result.workflows, { ttlMs: 10 * 60 * 1000 });
-      context.layers.set('persistent', 'workflow.componentUsage', result.componentUsage);
+        // Generate component usage summary
+        const componentUsage = this.analyzeComponentUsage();
 
-      // Index artifacts for selective retrieval
-      context.retrieval.index('workflow-pages', result.pages, {
-        fingerprint: context.fingerprint,
-        idKey: 'url',
-        tagExtractor: (page: Page) => page.components?.map(c => c.tag) || [],
-        scoreExtractor: (page: Page) => page.components?.length || 1,
-        metadataExtractor: (page: Page) => ({ title: page.title }),
-      });
+        const result: WorkflowDiscoveryResult = {
+          pages: this.discoveredPages,
+          workflows,
+          componentUsage,
+          discoveredAt: new Date(),
+          applicationUrl,
+        };
 
-      context.retrieval.index('workflows', result.workflows, {
-        fingerprint: context.fingerprint,
-        idKey: 'id',
-        tagExtractor: (workflow: Workflow) => workflow.components || [],
-        scoreExtractor: (workflow: Workflow) =>
-          workflow.priority === 'high' ? 3 : workflow.priority === 'medium' ? 2 : 1,
-        metadataExtractor: (workflow: Workflow) => ({ priority: workflow.priority }),
-      });
+        // Publish layered context artifacts for downstream agents
+        context.layers.set('shared', 'workflow.pages', result.pages, { ttlMs: 10 * 60 * 1000 });
+        context.layers.set('shared', 'workflow.workflows', result.workflows, { ttlMs: 10 * 60 * 1000 });
+        context.layers.set('persistent', 'workflow.componentUsage', result.componentUsage);
 
-      context.retrieval.index('component-usage', result.componentUsage, {
-        fingerprint: context.fingerprint,
-        idKey: 'tag',
-        tagExtractor: (usage: ComponentUsageSummary) => usage.patterns || [],
-        scoreExtractor: (usage: ComponentUsageSummary) => usage.pageCount,
-        metadataExtractor: (usage: ComponentUsageSummary) => ({
-          totalInstances: usage.totalInstances,
-        }),
-      });
+        // Index artifacts for selective retrieval
+        context.retrieval.index('workflow-pages', result.pages, {
+          fingerprint: context.fingerprint,
+          idKey: 'url',
+          tagExtractor: (page: Page) => page.components?.map(c => c.tag) || [],
+          scoreExtractor: (page: Page) => page.components?.length || 1,
+          metadataExtractor: (page: Page) => ({ title: page.title }),
+        });
 
-      context.memory.remember('WORKFLOW_DISCOVERY', 'latest-summary', {
-        pages: result.pages.length,
-        workflows: result.workflows.length,
-      }, {
-        scope: 'short',
-        ttlMs: 30 * 60 * 1000,
-        contextFingerprint: context.fingerprint,
-      });
+        context.retrieval.index('workflows', result.workflows, {
+          fingerprint: context.fingerprint,
+          idKey: 'id',
+          tagExtractor: (workflow: Workflow) => workflow.components || [],
+          scoreExtractor: (workflow: Workflow) =>
+            workflow.priority === 'high' ? 3 : workflow.priority === 'medium' ? 2 : 1,
+          metadataExtractor: (workflow: Workflow) => ({ priority: workflow.priority }),
+        });
 
-      this.logger.info(`Workflow discovery complete:`);
-      this.logger.info(`  - ${result.pages.length} pages discovered`);
-      this.logger.info(`  - ${result.workflows.length} workflows identified`);
-      this.logger.info(`  - ${result.componentUsage.length} unique components`);
+        context.retrieval.index('component-usage', result.componentUsage, {
+          fingerprint: context.fingerprint,
+          idKey: 'tag',
+          tagExtractor: (usage: ComponentUsageSummary) => usage.patterns || [],
+          scoreExtractor: (usage: ComponentUsageSummary) => usage.pageCount,
+          metadataExtractor: (usage: ComponentUsageSummary) => ({
+            totalInstances: usage.totalInstances,
+          }),
+        });
 
-      return this.success(result);
-    } catch (error) {
-      this.logger.error('Workflow discovery failed', error as Error);
-      return this.failure(error as Error);
-    } finally {
-      if (this.browser) {
-        await this.browser.close();
+        context.memory.remember('WORKFLOW_DISCOVERY', 'latest-summary', {
+          pages: result.pages.length,
+          workflows: result.workflows.length,
+        }, {
+          scope: 'short',
+          ttlMs: 30 * 60 * 1000,
+          contextFingerprint: context.fingerprint,
+        });
+
+        this.logger.info(`Workflow discovery complete:`);
+        this.logger.info(`  - ${result.pages.length} pages discovered`);
+        this.logger.info(`  - ${result.workflows.length} workflows identified`);
+        this.logger.info(`  - ${result.componentUsage.length} unique components`);
+
+        return this.success(result);
+      } catch (error) {
+        this.logger.error('Workflow discovery failed', error as Error);
+        return this.failure(error as Error);
+      } finally {
+        if (this.browser) {
+          await this.browser.close();
+        }
       }
-    }
+    });
   }
 
   /**

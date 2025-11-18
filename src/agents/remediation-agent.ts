@@ -10,6 +10,7 @@ import {
 } from '../types';
 import Anthropic from '@anthropic-ai/sdk';
 import { v4 as uuidv4 } from 'uuid';
+import { DatabaseManager } from '../storage/database';
 
 /**
  * Remediation Agent - Proposes fixes for detected issues
@@ -24,50 +25,52 @@ import { v4 as uuidv4 } from 'uuid';
 export class RemediationAgent extends BaseAgent {
   private ai: Anthropic;
 
-  constructor() {
-    super(AgentType.REMEDIATION);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.REMEDIATION, db);
     this.ai = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session, data } = context;
-    const comparisons = data?.comparisons || [];
+    return this.executeWithTracking(context, async () => {
+      const { config, session, data } = context;
+      const comparisons = data?.comparisons || [];
 
-    try {
-      this.logger.info('Generating remediation proposals');
+      try {
+        this.logger.info('Generating remediation proposals');
 
-      const remediations: Remediation[] = [];
+        const remediations: Remediation[] = [];
 
-      for (const comparison of comparisons) {
-        if (comparison.differences.length === 0) continue;
+        for (const comparison of comparisons) {
+          if (comparison.differences.length === 0) continue;
 
-        this.logger.info(`Analyzing differences for ${comparison.baseVersion} → ${comparison.targetVersion}`);
+          this.logger.info(`Analyzing differences for ${comparison.baseVersion} → ${comparison.targetVersion}`);
 
-        const proposal = await this.generateProposal(comparison, config);
+          const proposal = await this.generateProposal(comparison, config);
 
-        const remediation: Remediation = {
-          id: uuidv4(),
-          comparisonId: comparison.id,
-          sessionId: session.id,
-          proposal,
-          status: RemediationStatus.PROPOSED,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
+          const remediation: Remediation = {
+            id: uuidv4(),
+            comparisonId: comparison.id,
+            sessionId: session.id,
+            proposal,
+            status: RemediationStatus.PROPOSED,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
 
-        remediations.push(remediation);
+          remediations.push(remediation);
+        }
+
+        this.logger.info(`Generated ${remediations.length} remediation proposals`);
+
+        return this.success({
+          remediations,
+        });
+      } catch (error) {
+        return this.failure(error as Error);
       }
-
-      this.logger.info(`Generated ${remediations.length} remediation proposals`);
-
-      return this.success({
-        remediations,
-      });
-    } catch (error) {
-      return this.failure(error as Error);
-    }
+    });
   }
 
   private async generateProposal(

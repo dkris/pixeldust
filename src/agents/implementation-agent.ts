@@ -9,6 +9,7 @@ import {
 import simpleGit, { SimpleGit } from 'simple-git';
 import fs from 'fs/promises';
 import path from 'path';
+import { DatabaseManager } from '../storage/database';
 
 /**
  * Implementation Agent - Applies approved fixes
@@ -23,49 +24,51 @@ import path from 'path';
 export class ImplementationAgent extends BaseAgent {
   private git: SimpleGit;
 
-  constructor() {
-    super(AgentType.IMPLEMENTATION);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.IMPLEMENTATION, db);
     this.git = simpleGit();
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { session, data } = context;
-    const remediations = data?.remediations || [];
+    return this.executeWithTracking(context, async () => {
+      const { session, data } = context;
+      const remediations = data?.remediations || [];
 
-    try {
-      this.logger.info('Implementing approved remediations');
+      try {
+        this.logger.info('Implementing approved remediations');
 
-      const implementations: Implementation[] = [];
+        const implementations: Implementation[] = [];
 
-      // Filter approved remediations
-      const approvedRemediations = remediations.filter(
-        (r: any) => r.status === RemediationStatus.APPROVED
-      );
-
-      if (approvedRemediations.length === 0) {
-        this.logger.info('No approved remediations to implement');
-        return this.success({ message: 'No approved remediations' });
-      }
-
-      for (const remediation of approvedRemediations) {
-        this.logger.info(`Implementing remediation ${remediation.id}`);
-
-        const implementation = await this.implementRemediation(
-          remediation,
-          session.id
+        // Filter approved remediations
+        const approvedRemediations = remediations.filter(
+          (r: any) => r.status === RemediationStatus.APPROVED
         );
 
-        implementations.push(implementation);
+        if (approvedRemediations.length === 0) {
+          this.logger.info('No approved remediations to implement');
+          return this.success({ message: 'No approved remediations' });
+        }
+
+        for (const remediation of approvedRemediations) {
+          this.logger.info(`Implementing remediation ${remediation.id}`);
+
+          const implementation = await this.implementRemediation(
+            remediation,
+            session.id
+          );
+
+          implementations.push(implementation);
+        }
+
+        this.logger.info(`Implemented ${implementations.length} remediations`);
+
+        return this.success({
+          implementations,
+        });
+      } catch (error) {
+        return this.failure(error as Error);
       }
-
-      this.logger.info(`Implemented ${implementations.length} remediations`);
-
-      return this.success({
-        implementations,
-      });
-    } catch (error) {
-      return this.failure(error as Error);
-    }
+    });
   }
 
   private async implementRemediation(
