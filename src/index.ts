@@ -6,6 +6,7 @@
 
 // Core exports
 export { OrchestratorAgent } from './agents/orchestrator-agent';
+export { HybridOrchestratorAgent } from './agents/hybrid-orchestrator-agent';
 export { ApplicationLoaderAgent } from './agents/application-loader-agent';
 export { EnvironmentAgent } from './agents/environment-agent';
 export { TestGenerationAgent } from './agents/test-generation-agent';
@@ -38,12 +39,11 @@ export * from './types';
  */
 export class PixelDust {
   static async run(config: any) {
-    const { OrchestratorAgent } = await import('./agents/orchestrator-agent');
     const { DatabaseManager } = await import('./storage/database');
     const { v4: uuidv4 } = await import('uuid');
+    const { createOrchestrator } = await import('./core/orchestrator-factory');
 
     const db = new DatabaseManager();
-    const orchestrator = new OrchestratorAgent(db);
     const eventBus = new EventBus({ db });
 
     const session = {
@@ -56,6 +56,7 @@ export class PixelDust {
     };
 
     const stageContext = new StageContext(session, config, eventBus);
+    const { orchestrator } = createOrchestrator(db, config);
     const result = await orchestrator.execute(stageContext.createAgentContext());
 
     db.close();

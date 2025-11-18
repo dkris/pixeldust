@@ -84,6 +84,12 @@ const ConfigSchema = z.object({
     incremental: z.boolean().optional(),
     createBranches: z.boolean().optional(),
   }).optional(),
+  orchestration: z
+    .object({
+      mode: z.enum(['hybrid', 'legacy']).default('hybrid'),
+      usePipeline: z.boolean().optional().default(true),
+    })
+    .default({ mode: 'hybrid', usePipeline: true }),
 });
 
 /**
@@ -195,6 +201,10 @@ export class ConfigLoader {
       upgrade: {
         updatePeerDependencies: true,
         fixTests: true,
+      },
+      orchestration: {
+        mode: 'hybrid',
+        usePipeline: true,
       },
     };
   }
