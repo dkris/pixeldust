@@ -14,7 +14,7 @@ import { WorkflowReporter } from '../utils/workflow-reporter';
 import Logger from '../utils/logger';
 import fs from 'fs/promises';
 import path from 'path';
-import { EventBus } from '../core/event-bus';
+import { EventBus, EventType } from '../core/event-bus';
 import { StageContext } from '../core/pipeline';
 import {
   createOrchestrator,
@@ -870,29 +870,59 @@ async function runStateMachine(
     currentSession.state !== SessionState.ERROR &&
     currentSession.state !== SessionState.AWAITING_APPROVAL
   ) {
-    spinner.start(`State: ${currentSession.state}`);
+    const stageName = currentSession.state;
+    const stageStartTime = Date.now();
 
-    const result = await orchestrator.execute(
-      stageContext.createAgentContext(data)
-    );
+    spinner.start(`State: ${stageName}`);
+    stageContext.emit(EventType.STAGE_STARTED, null, { stageName });
 
-    if (!result.success) {
-      spinner.fail(`Failed in state ${currentSession.state}`);
-      logger.error('Execution failed', result.error!);
+    try {
+      const result = await orchestrator.execute(
+        stageContext.createAgentContext(data)
+      );
+
+      if (!result.success) {
+        stageContext.emit(
+          EventType.STAGE_FAILED,
+          { error: result.error?.message },
+          { stageName }
+        );
+        spinner.fail(`Failed in state ${stageName}`);
+        logger.error('Execution failed', result.error!);
+        break;
+      }
+
+      const stageDuration = Date.now() - stageStartTime;
+
+      // Update data
+      data = { ...data, ...result.data };
+
+      // Update session state
+      if (result.nextState) {
+        db.updateSessionState(currentSession.id, result.nextState);
+        currentSession.state = result.nextState;
+        currentSession.updatedAt = new Date();
+      }
+
+      spinner.succeed(`Completed: ${currentSession.state}`);
+
+      stageContext.emit(
+        EventType.STAGE_COMPLETED,
+        { duration: stageDuration, ...result.data },
+        { stageName }
+      );
+    } catch (error) {
+      stageContext.emit(
+        EventType.STAGE_FAILED,
+        { error: (error as Error).message },
+        { stageName }
+      );
+      spinner.fail(`Failed in state ${stageName}`);
+      logger.error('Execution failed', error as Error);
       break;
+    } finally {
+      stageContext.pruneLayers(['ephemeral']);
     }
-
-    // Update data
-    data = { ...data, ...result.data };
-
-    // Update session state
-    if (result.nextState) {
-      db.updateSessionState(currentSession.id, result.nextState);
-      currentSession.state = result.nextState;
-      currentSession.updatedAt = new Date();
-    }
-
-    spinner.succeed(`Completed: ${currentSession.state}`);
   }
 
   if (currentSession.state === SessionState.AWAITING_APPROVAL) {
