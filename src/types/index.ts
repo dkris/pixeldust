@@ -20,6 +20,12 @@ export interface Config {
   reporting: ReportingConfig;
   application?: ApplicationConfig;
   upgrade?: UpgradeConfig;
+  orchestration?: OrchestrationConfig;
+}
+
+export interface OrchestrationConfig {
+  mode: 'hybrid' | 'legacy';
+  usePipeline?: boolean;
 }
 
 export type FrameworkType = 'web-components' | 'react' | 'react-ui5' | 'vue' | 'angular';

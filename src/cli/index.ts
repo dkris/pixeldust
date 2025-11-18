@@ -6,7 +6,6 @@ import ora from 'ora';
 import open from 'open';
 import { ConfigLoader } from '../core/config-loader';
 import { DatabaseManager } from '../storage/database';
-import { OrchestratorAgent } from '../agents/orchestrator-agent';
 import { WorkflowDiscoveryAgent } from '../agents/workflow-discovery-agent';
 import { Session, SessionState, Config } from '../types';
 import { ReportGenerator } from '../core/report-generator';
@@ -17,9 +16,16 @@ import fs from 'fs/promises';
 import path from 'path';
 import { EventBus } from '../core/event-bus';
 import { StageContext } from '../core/pipeline';
+import {
+  createOrchestrator,
+  OrchestratorInstance,
+  OrchestratorMode,
+} from '../core/orchestrator-factory';
 
 const program = new Command();
 const logger = new Logger('CLI');
+const ORCHESTRATOR_OPTION_DESCRIPTION =
+  'Choose orchestrator implementation (hybrid or legacy)';
 
 program
   .name('pixeldust')
@@ -74,6 +80,7 @@ program
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-v, --versions <versions>', 'Comma-separated list of versions to test')
   .option('--skip-browser-check', 'Skip Playwright browser installation check')
+  .option('--orchestrator <mode>', ORCHESTRATOR_OPTION_DESCRIPTION)
   .action(async (options) => {
     const spinner = ora('Loading configuration').start();
 
@@ -121,7 +128,12 @@ program
       const db = new DatabaseManager();
 
       // Create orchestrator
-      const orchestrator = new OrchestratorAgent(db);
+      const orchestratorOverride = parseOrchestratorOption(options.orchestrator);
+      const { orchestrator, mode } = createOrchestrator(db, config, {
+        modeOverride: orchestratorOverride,
+      });
+
+      logger.info(`Using ${mode === 'hybrid' ? 'hybrid' : 'legacy'} orchestrator`);
 
       spinner.start('Starting testing session');
       logger.info(`Session ID: ${session.id}`);
@@ -144,7 +156,8 @@ program
 program
   .command('resume <session-id>')
   .description('Resume a previous testing session')
-  .action(async (sessionId) => {
+  .option('--orchestrator <mode>', ORCHESTRATOR_OPTION_DESCRIPTION)
+  .action(async (sessionId, options) => {
     const spinner = ora('Resuming session').start();
 
     try {
@@ -153,13 +166,19 @@ program
 
       if (!session) {
         spinner.fail(`Session ${sessionId} not found`);
+        db.close();
         return;
       }
 
       spinner.succeed(`Resumed session ${sessionId}`);
       logger.info(`Current state: ${session.state}`);
 
-      const orchestrator = new OrchestratorAgent(db);
+      const orchestratorOverride = parseOrchestratorOption(options.orchestrator);
+      const { orchestrator, mode } = createOrchestrator(db, session.config, {
+        modeOverride: orchestratorOverride,
+      });
+
+      logger.info(`Using ${mode === 'hybrid' ? 'hybrid' : 'legacy'} orchestrator`);
       await runStateMachine(orchestrator, session, session.config, db, spinner);
 
       db.close();
@@ -187,6 +206,7 @@ program
 
       if (!session) {
         spinner.fail(`Session ${sessionId} not found`);
+        db.close();
         return;
       }
 
@@ -340,22 +360,33 @@ ${test.code}
 program
   .command('approve <session-id> <remediation-id>')
   .description('Approve a remediation proposal')
-  .action(async (sessionId, remediationId) => {
+  .option('--orchestrator <mode>', ORCHESTRATOR_OPTION_DESCRIPTION)
+  .action(async (sessionId, remediationId, options) => {
     const spinner = ora('Approving remediation').start();
 
     try {
       const db = new DatabaseManager();
-      const orchestrator = new OrchestratorAgent(db);
+      const session = db.getSession(sessionId);
+
+      if (!session) {
+        spinner.fail(`Session ${sessionId} not found`);
+        db.close();
+        return;
+      }
+
+      const orchestratorOverride = parseOrchestratorOption(options.orchestrator);
+      const { orchestrator, mode } = createOrchestrator(db, session.config, {
+        modeOverride: orchestratorOverride,
+      });
+
+      logger.info(`Using ${mode === 'hybrid' ? 'hybrid' : 'legacy'} orchestrator`);
 
       await orchestrator.approveRemediation(sessionId, remediationId);
 
       spinner.succeed('Remediation approved');
 
       // Continue execution
-      const session = db.getSession(sessionId);
-      if (session) {
-        await runStateMachine(orchestrator, session, session.config, db, spinner);
-      }
+      await runStateMachine(orchestrator, session, session.config, db, spinner);
 
       db.close();
     } catch (error) {
@@ -807,8 +838,23 @@ async function checkPlaywrightBrowsers(browsers: string[]): Promise<boolean> {
 // State Machine Execution
 // ============================================================================
 
+function parseOrchestratorOption(mode?: string): OrchestratorMode | undefined {
+  if (!mode) {
+    return undefined;
+  }
+
+  const normalized = mode.toLowerCase();
+  if (normalized !== 'hybrid' && normalized !== 'legacy') {
+    throw new Error(
+      `Invalid orchestrator mode: ${mode}. Use "hybrid" or "legacy".`
+    );
+  }
+
+  return normalized as OrchestratorMode;
+}
+
 async function runStateMachine(
-  orchestrator: OrchestratorAgent,
+  orchestrator: OrchestratorInstance,
   session: Session,
   config: Config,
   db: DatabaseManager,

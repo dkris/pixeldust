@@ -15,6 +15,7 @@ import { EvaluationAgent } from './evaluation-agent';
 import { EventBus, EventType } from '../core/event-bus';
 import { PipelineExecutor, StageContext } from '../core/pipeline';
 import { AgentPipelineFactory } from '../core/agent-stage-adapter';
+import { OrchestratorAgent } from './orchestrator-agent';
 
 /**
  * Hybrid Orchestrator Agent
@@ -33,6 +34,7 @@ export class HybridOrchestratorAgent extends BaseAgent {
   private eventBus: EventBus;
   private pipelineExecutor: PipelineExecutor;
   private usePipeline: boolean;
+  private legacyOrchestrator: OrchestratorAgent;
 
   constructor(db: DatabaseManager, options?: { usePipeline?: boolean }) {
     super(AgentType.ORCHESTRATOR, db);
@@ -41,6 +43,7 @@ export class HybridOrchestratorAgent extends BaseAgent {
     this.eventBus = new EventBus({ db });
     this.pipelineExecutor = new PipelineExecutor(this.eventBus);
     this.usePipeline = options?.usePipeline !== false; // Default to pipeline mode
+    this.legacyOrchestrator = new OrchestratorAgent(db);
 
     this.initializeAgents();
     this.setupEventHandlers();
@@ -217,12 +220,11 @@ export class HybridOrchestratorAgent extends BaseAgent {
     );
 
     // Delegate to original state machine implementation
-    // This would be the existing orchestrator logic
-    // For now, just return success
-    return this.success(
-      { message: 'State machine execution (legacy mode)' },
-      SessionState.COMPLETE
-    );
+    return this.legacyOrchestrator.execute(context);
+  }
+
+  async approveRemediation(sessionId: string, remediationId: string): Promise<void> {
+    return this.legacyOrchestrator.approveRemediation(sessionId, remediationId);
   }
 
   /**
