@@ -27,6 +27,9 @@ export { ReportGenerator } from './core/report-generator';
 // Utils
 export { Logger } from './utils/logger';
 
+import { EventBus } from './core/event-bus';
+import { StageContext } from './core/pipeline';
+
 // Types
 export * from './types';
 
@@ -41,6 +44,7 @@ export class PixelDust {
 
     const db = new DatabaseManager();
     const orchestrator = new OrchestratorAgent(db);
+    const eventBus = new EventBus({ db });
 
     const session = {
       id: uuidv4(),
@@ -51,7 +55,8 @@ export class PixelDust {
       updatedAt: new Date(),
     };
 
-    const result = await orchestrator.execute({ session, config });
+    const stageContext = new StageContext(session, config, eventBus);
+    const result = await orchestrator.execute(stageContext.createAgentContext());
 
     db.close();
 
