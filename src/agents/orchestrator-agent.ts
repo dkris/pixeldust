@@ -24,12 +24,12 @@ import { EvaluationAgent } from './evaluation-agent';
  * - Manage user interactions
  */
 export class OrchestratorAgent extends BaseAgent {
-  private db: DatabaseManager;
+  private readonly database: DatabaseManager;
   private agents: Map<AgentType, BaseAgent>;
 
   constructor(db: DatabaseManager) {
-    super(AgentType.ORCHESTRATOR);
-    this.db = db;
+    super(AgentType.ORCHESTRATOR, db);
+    this.database = db;
     this.agents = new Map();
     this.initializeAgents();
   }
@@ -46,7 +46,7 @@ export class OrchestratorAgent extends BaseAgent {
     this.agents.set(AgentType.REMEDIATION, new RemediationAgent());
     this.agents.set(AgentType.IMPLEMENTATION, new ImplementationAgent());
     this.agents.set(AgentType.REVIEW, new ReviewAgent());
-    this.agents.set(AgentType.EVALUATION, new EvaluationAgent(this.db));
+    this.agents.set(AgentType.EVALUATION, new EvaluationAgent(this.database));
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
@@ -135,7 +135,7 @@ export class OrchestratorAgent extends BaseAgent {
     }
 
     // Create session in database
-    this.db.createSession(context.session);
+    this.database.createSession(context.session);
 
     // Decide next state based on configuration
     const nextState = config.application
@@ -215,7 +215,7 @@ export class OrchestratorAgent extends BaseAgent {
     // Save generated test suites to database
     if (result.data?.testSuites) {
       for (const testSuite of result.data.testSuites) {
-        this.db.saveTestSuite(testSuite);
+        this.database.saveTestSuite(testSuite);
       }
       this.logger.info(`Saved ${result.data.testSuites.length} test suites to database`);
     }
@@ -239,7 +239,7 @@ export class OrchestratorAgent extends BaseAgent {
     // Save test results to database
     if (result.data?.results) {
       for (const testResult of result.data.results) {
-        this.db.saveTestResult(testResult);
+        this.database.saveTestResult(testResult);
 
         // Create and save snapshots from test results
         for (const screenshot of testResult.screenshots || []) {
@@ -257,7 +257,7 @@ export class OrchestratorAgent extends BaseAgent {
             timestamp: Date.now(),
           };
 
-          this.db.saveSnapshot(snapshot);
+          this.database.saveSnapshot(snapshot);
         }
       }
       this.logger.info(`Saved ${result.data.results.length} test results to database`);
@@ -324,8 +324,8 @@ export class OrchestratorAgent extends BaseAgent {
       const targetVersion = versions[i];
 
       // Get snapshots for base and target versions
-      const baseSnapshots = this.db.getSnapshots(sessionId, baseVersion);
-      const targetSnapshots = this.db.getSnapshots(sessionId, targetVersion);
+      const baseSnapshots = this.database.getSnapshots(sessionId, baseVersion);
+      const targetSnapshots = this.database.getSnapshots(sessionId, targetVersion);
 
       // Group snapshots by component (testId)
       const snapshotsByComponent = new Map<string, { base: any[], target: any[] }>();
@@ -377,7 +377,7 @@ export class OrchestratorAgent extends BaseAgent {
             timestamp: Date.now(),
           };
 
-          this.db.saveSnapshotComparison(snapshotComparison);
+          this.database.saveSnapshotComparison(snapshotComparison);
         }
       }
     }
@@ -540,7 +540,7 @@ export class OrchestratorAgent extends BaseAgent {
     this.logger.error('Unhandled exception in orchestrator', error);
 
     // Update session state to ERROR
-    this.db.updateSessionState(context.session.id, SessionState.ERROR);
+    this.database.updateSessionState(context.session.id, SessionState.ERROR);
 
     return this.failure(error, SessionState.ERROR);
   }
@@ -550,7 +550,7 @@ export class OrchestratorAgent extends BaseAgent {
    */
   async approveRemediation(sessionId: string, remediationId: string): Promise<void> {
     this.logger.info(`Approving remediation ${remediationId} for session ${sessionId}`);
-    this.db.updateSessionState(sessionId, SessionState.IMPLEMENTING);
+    this.database.updateSessionState(sessionId, SessionState.IMPLEMENTING);
   }
 
   /**
@@ -558,7 +558,7 @@ export class OrchestratorAgent extends BaseAgent {
    */
   async rejectRemediation(sessionId: string, remediationId: string, reason?: string): Promise<void> {
     this.logger.info(`Rejecting remediation ${remediationId} for session ${sessionId}`, { reason });
-    this.db.updateSessionState(sessionId, SessionState.REMEDIATION_PROPOSAL);
+    this.database.updateSessionState(sessionId, SessionState.REMEDIATION_PROPOSAL);
   }
 }
 

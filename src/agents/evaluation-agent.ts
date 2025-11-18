@@ -32,11 +32,11 @@ import { v4 as uuidv4 } from 'uuid';
  */
 export class EvaluationAgent extends BaseAgent {
   private ai: Anthropic;
-  private db: DatabaseManager;
+  private readonly database: DatabaseManager;
 
   constructor(db: DatabaseManager) {
-    super(AgentType.EVALUATION);
-    this.db = db;
+    super(AgentType.EVALUATION, db);
+    this.database = db;
     this.ai = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     });
@@ -81,7 +81,7 @@ export class EvaluationAgent extends BaseAgent {
       };
 
       // Save to database for historical learning
-      this.db.saveEvaluation(evaluation);
+      this.database.saveEvaluation(evaluation);
 
       this.logger.info(`Evaluation complete. Overall score: ${overallScore.toFixed(2)}/100`);
       this.logger.info(`Generated ${feedback.recommendations.length} recommendations`);
@@ -102,8 +102,8 @@ export class EvaluationAgent extends BaseAgent {
    * Evaluate the quality of generated tests
    */
   private async evaluateTestQuality(sessionId: string): Promise<TestQualityMetrics> {
-    const testSuites = this.db.getTestSuites(sessionId);
-    const testResults = this.db.getTestResults(sessionId);
+    const testSuites = this.database.getTestSuites(sessionId);
+    const testResults = this.database.getTestResults(sessionId);
 
     // Calculate totals
     const totalTests = testResults.length;
@@ -165,8 +165,8 @@ export class EvaluationAgent extends BaseAgent {
    * Evaluate the quality of visual/DOM comparisons
    */
   private async evaluateComparisonQuality(sessionId: string): Promise<ComparisonQualityMetrics> {
-    const comparisons = this.db.getComparisons(sessionId);
-    const snapshotComparisons = this.db.getSnapshotComparisons(sessionId);
+    const comparisons = this.database.getComparisons(sessionId);
+    const snapshotComparisons = this.database.getSnapshotComparisons(sessionId);
 
     const totalComparisons = comparisons.length + snapshotComparisons.length;
 
@@ -228,7 +228,7 @@ export class EvaluationAgent extends BaseAgent {
   private async evaluateRemediationEffectiveness(
     sessionId: string
   ): Promise<RemediationEffectivenessMetrics | undefined> {
-    const remediations = this.db.getRemediations(sessionId);
+    const remediations = this.database.getRemediations(sessionId);
 
     if (remediations.length === 0) {
       return undefined;
