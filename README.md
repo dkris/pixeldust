@@ -221,6 +221,10 @@ Tests your real application with automatic workflow discovery.
 - ✅ AI-powered test fixing
 - ✅ End-to-end migration
 
+### State Machine Context Hygiene
+
+The orchestrator's state machine now mirrors the pipeline executor's hygiene loop: each transition emits `STAGE_STARTED`/`STAGE_COMPLETED` events on the shared `EventBus`, then prunes `StageContext`'s ephemeral layers. This keeps prompt/retrieval caches for short-lived work (like workflow discovery artifacts) from growing unbounded while preserving persistent and shared layers for downstream agents.
+
 **Example Config:**
 ```json
 {
