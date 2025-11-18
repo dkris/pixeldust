@@ -498,10 +498,10 @@ export class TestGenerationAgent extends BaseAgent {
       prompt = `Generate tests for "${component}" in application context.${workflowContext}
 
 Categories (balanced):
-1. Functional (40%): User interactions, workflows
-2. Visual (25%): Rendering, layout
-3. Accessibility (20%): ARIA, keyboard nav
-4. Performance (15%): Load time, responsiveness
+1. Visual (40%): Rendering, layout
+2. Accessibility (30%): ARIA, keyboard, screen reader
+3. Functional (20%): User interactions, workflows
+4. Performance (10%): Load time, responsiveness, speed
 
 Each test needs:
 - Name (kebab-case, e.g., "${component}-form-submit")
@@ -515,10 +515,10 @@ Generate 6-8 tests for application workflows.`;
       prompt = `Generate tests for "${component}" web component.
 
 Categories (balanced, at least one each):
-1. Functional (40%): Interactions, state, behavior
-2. Visual (25%): Rendering, layout
-3. Accessibility (20%): ARIA, keyboard, screen reader
-4. Performance (15%): Speed, responsiveness
+1. Visual (40%): Rendering, layout
+2. Accessibility (30%): ARIA, keyboard, screen reader
+3. Functional (20%): User interactions, workflows
+4. Performance (10%): Load time, responsiveness, speed
 
 Each test:
 - Name (kebab-case with component)
