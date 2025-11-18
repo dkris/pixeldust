@@ -10,6 +10,7 @@ import {
   Workflow,
   Page,
   ComponentUsageSummary,
+  WorkflowDiscoveryDriver,
 } from '../types';
 import Anthropic from '@anthropic-ai/sdk';
 import { v4 as uuidv4 } from 'uuid';
@@ -717,6 +718,11 @@ test('${component} visual snapshot', async ({ page }) => {
   }
 
   private getWorkflowData(context: AgentContext): WorkflowDiscoveryResult | null {
+    const driverLayer = context.layers.get<{ driver?: WorkflowDiscoveryDriver }>('workflow.discovery.driver');
+    const configuredDriver = context.config.workflowDiscovery?.driver as WorkflowDiscoveryDriver | undefined;
+    const fallbackDriver: WorkflowDiscoveryDriver = configuredDriver || 'local';
+    const driver: WorkflowDiscoveryDriver = driverLayer?.driver || fallbackDriver;
+
     const layeredPages = context.layers.get<Page[]>('workflow.pages');
     const layeredWorkflows = context.layers.get<Workflow[]>('workflow.workflows');
     const layeredUsage = context.layers.get<ComponentUsageSummary[]>('workflow.componentUsage');
@@ -728,6 +734,7 @@ test('${component} visual snapshot', async ({ page }) => {
         componentUsage: layeredUsage || [],
         discoveredAt: new Date(),
         applicationUrl: context.config.application?.path || 'unknown',
+        driver,
       };
     }
 
@@ -742,10 +749,19 @@ test('${component} visual snapshot', async ({ page }) => {
         componentUsage: usageRecords.map(record => record.payload as ComponentUsageSummary),
         discoveredAt: new Date(workflowRecords[0]?.timestamp || Date.now()),
         applicationUrl: context.config.application?.path || 'unknown',
+        driver,
       };
     }
 
-    return context.data?.pages && context.data?.workflows ? (context.data as WorkflowDiscoveryResult) : null;
+    if (context.data?.pages && context.data?.workflows) {
+      const dataResult = context.data as WorkflowDiscoveryResult;
+      return {
+        ...dataResult,
+        driver: dataResult.driver || driver,
+      };
+    }
+
+    return null;
   }
 }
 
