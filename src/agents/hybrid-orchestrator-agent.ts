@@ -50,17 +50,19 @@ export class HybridOrchestratorAgent extends BaseAgent {
   }
 
   private initializeAgents() {
-    this.agents.set(AgentType.APPLICATION_LOADER, new ApplicationLoaderAgent());
-    this.agents.set(AgentType.ENVIRONMENT, new EnvironmentAgent());
-    this.agents.set(AgentType.TEST_GENERATION, new TestGenerationAgent());
-    this.agents.set(AgentType.EXECUTION, new ExecutionAgent());
-    this.agents.set(AgentType.ANALYSIS, new AnalysisAgent());
-    this.agents.set(AgentType.DEPENDENCY_UPGRADE, new DependencyUpgradeAgent());
-    this.agents.set(AgentType.TEST_FIXING, new TestFixingAgent());
-    this.agents.set(AgentType.REMEDIATION, new RemediationAgent());
-    this.agents.set(AgentType.IMPLEMENTATION, new ImplementationAgent());
-    this.agents.set(AgentType.REVIEW, new ReviewAgent());
-    this.agents.set(AgentType.EVALUATION, new EvaluationAgent(this.database));
+    const db = this.database;
+
+    this.agents.set(AgentType.APPLICATION_LOADER, new ApplicationLoaderAgent(db));
+    this.agents.set(AgentType.ENVIRONMENT, new EnvironmentAgent(db));
+    this.agents.set(AgentType.TEST_GENERATION, new TestGenerationAgent(db));
+    this.agents.set(AgentType.EXECUTION, new ExecutionAgent(db));
+    this.agents.set(AgentType.ANALYSIS, new AnalysisAgent(db));
+    this.agents.set(AgentType.DEPENDENCY_UPGRADE, new DependencyUpgradeAgent(db));
+    this.agents.set(AgentType.TEST_FIXING, new TestFixingAgent(db));
+    this.agents.set(AgentType.REMEDIATION, new RemediationAgent(db));
+    this.agents.set(AgentType.IMPLEMENTATION, new ImplementationAgent(db));
+    this.agents.set(AgentType.REVIEW, new ReviewAgent(db));
+    this.agents.set(AgentType.EVALUATION, new EvaluationAgent(db));
   }
 
   /**
