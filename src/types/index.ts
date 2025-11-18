@@ -21,6 +21,7 @@ export interface Config {
   application?: ApplicationConfig;
   upgrade?: UpgradeConfig;
   orchestration?: OrchestrationConfig;
+  workflowDiscovery?: WorkflowDiscoveryConfig;
 }
 
 export interface OrchestrationConfig {
@@ -118,6 +119,37 @@ export interface UpgradeConfig {
   testTimeout?: number;
   incremental?: boolean;
   createBranches?: boolean;
+}
+
+export type WorkflowDiscoveryDriver = 'local' | 'mcp';
+
+export interface WorkflowDiscoveryConfig {
+  driver: WorkflowDiscoveryDriver;
+  maxDepth?: number;
+  maxPages?: number;
+  mcp?: WorkflowDiscoveryMcpConfig;
+}
+
+export interface WorkflowDiscoveryMcpConfig {
+  endpoint: string;
+  timeoutMs?: number;
+  credentials?: {
+    token?: string;
+    username?: string;
+    password?: string;
+  };
+  tools?: Partial<{
+    start: string;
+    goto: string;
+    snapshot: string;
+    metadata: string;
+    components: string;
+    interactive: string;
+    links: string;
+    screenshot: string;
+    console: string;
+    close: string;
+  }>;
 }
 
 // ============================================================================
@@ -600,6 +632,16 @@ export interface WorkflowDiscoveryResult {
   discoveredAt: Date;
   /** Application URL that was crawled */
   applicationUrl: string;
+  /** Driver used to capture artifacts */
+  driver: WorkflowDiscoveryDriver;
+}
+
+export interface WorkflowDiscoveryArtifact {
+  url: string;
+  domSnapshot?: string;
+  screenshot?: string;
+  consoleLogs?: string[];
+  capturedAt: Date;
 }
 
 /**

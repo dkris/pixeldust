@@ -4,17 +4,25 @@ import {
   AgentContext,
   AgentResult,
   Page,
-  PageComponent,
-  InteractiveElement,
   Workflow,
   WorkflowStep,
   WorkflowDiscoveryResult,
   ComponentUsageSummary,
+  WorkflowDiscoveryDriver,
+  WorkflowDiscoveryArtifact,
+  WorkflowDiscoveryConfig,
+  Config,
 } from '../types';
-import { chromium, Browser, Page as PlaywrightPage } from 'playwright';
 import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseManager } from '../storage/database';
+import {
+  WorkflowDiscoveryBrowserClient,
+  LocalPlaywrightClient,
+  McpPlaywrightClient,
+} from '../services/workflow-discovery/browser-client';
+
+type WorkflowDiscoveryClientFactory = (config: Config) => WorkflowDiscoveryBrowserClient;
 
 /**
  * Workflow Discovery Agent - Crawls application to discover pages and workflows
@@ -27,15 +35,18 @@ import { DatabaseManager } from '../storage/database';
  * - Provide workflow data for intelligent test generation
  */
 export class WorkflowDiscoveryAgent extends BaseAgent {
-  private browser: Browser | null = null;
+  private client: WorkflowDiscoveryBrowserClient | null = null;
   private visitedUrls: Set<string> = new Set();
   private discoveredPages: Page[] = [];
   private maxDepth: number = 3;
   private maxPages: number = 50;
   private frameworkPrefix: string = 'ui5';
+  private driverUsed: WorkflowDiscoveryDriver = 'local';
+  private clientFactory?: WorkflowDiscoveryClientFactory;
 
-  constructor(db?: DatabaseManager) {
+  constructor(db?: DatabaseManager, clientFactory?: WorkflowDiscoveryClientFactory) {
     super(AgentType.WORKFLOW_DISCOVERY, db);
+    this.clientFactory = clientFactory;
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
@@ -50,6 +61,8 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
 
       try {
         this.logger.info('Starting workflow discovery');
+        this.visitedUrls.clear();
+        this.discoveredPages = [];
 
         // Get application URL from containers or application config
         const applicationUrl = this.getApplicationUrl(data, config);
@@ -62,13 +75,24 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
         // Determine framework prefix for component detection
         this.frameworkPrefix = this.getFrameworkPrefix(config.framework.name);
 
-        // Launch browser
-        this.browser = await chromium.launch({
-          headless: config.testing.headless !== false,
-        });
+        const driverConfig = this.getDriverConfig(config);
+        this.maxDepth = driverConfig.maxDepth ?? this.maxDepth;
+        this.maxPages = driverConfig.maxPages ?? this.maxPages;
+
+        // Launch appropriate browser client
+        this.client = this.createBrowserClient(config);
+        this.driverUsed = driverConfig.driver;
+        await this.client.start();
+
+        context.layers.set(
+          'shared',
+          'workflow.discovery.driver',
+          { driver: this.driverUsed, configuredAt: new Date().toISOString() },
+          { ttlMs: 30 * 60 * 1000 }
+        );
 
         // Crawl application starting from root
-        await this.crawlApplication(applicationUrl, 0);
+        await this.crawlApplication(context, applicationUrl, 0);
 
         // Build workflows from discovered pages
         const workflows = await this.buildWorkflows();
@@ -82,6 +106,7 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
           componentUsage,
           discoveredAt: new Date(),
           applicationUrl,
+          driver: this.driverUsed,
         };
 
         // Publish layered context artifacts for downstream agents
@@ -120,6 +145,7 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
         context.memory.remember('WORKFLOW_DISCOVERY', 'latest-summary', {
           pages: result.pages.length,
           workflows: result.workflows.length,
+          driver: this.driverUsed,
         }, {
           scope: 'short',
           ttlMs: 30 * 60 * 1000,
@@ -136,8 +162,9 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
         this.logger.error('Workflow discovery failed', error as Error);
         return this.failure(error as Error);
       } finally {
-        if (this.browser) {
-          await this.browser.close();
+        if (this.client) {
+          await this.client.stop().catch(() => undefined);
+          this.client = null;
         }
       }
     });
@@ -166,7 +193,7 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
   /**
    * Crawl application recursively
    */
-  private async crawlApplication(url: string, depth: number): Promise<void> {
+  private async crawlApplication(context: AgentContext, url: string, depth: number): Promise<void> {
     // Stop if max depth or max pages reached
     if (depth > this.maxDepth || this.discoveredPages.length >= this.maxPages) {
       return;
@@ -184,27 +211,20 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
     this.logger.debug(`Crawling page (depth ${depth}): ${normalizedUrl}`);
 
     try {
-      const page = await this.browser!.newPage();
+      if (!this.client) {
+        throw new Error('Browser client not initialized');
+      }
 
-      // Navigate to page
-      await page.goto(normalizedUrl, {
-        waitUntil: 'networkidle',
-        timeout: 30000,
-      });
-
-      // Wait a bit for dynamic content
-      await page.waitForTimeout(1000);
+      await this.client.navigate(normalizedUrl);
 
       // Discover page details
-      const pageData = await this.discoverPage(page, normalizedUrl);
+      const pageData = await this.discoverPage(context, normalizedUrl);
       this.discoveredPages.push(pageData);
-
-      await page.close();
 
       // Recursively crawl linked pages
       for (const link of pageData.links) {
         if (this.shouldCrawlUrl(link, normalizedUrl)) {
-          await this.crawlApplication(link, depth + 1);
+          await this.crawlApplication(context, link, depth + 1);
         }
       }
     } catch (error) {
@@ -215,198 +235,90 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
   /**
    * Discover details about a page
    */
-  private async discoverPage(page: PlaywrightPage, url: string): Promise<Page> {
-    // Get page title
-    const title = await page.title();
+  private async discoverPage(context: AgentContext, url: string): Promise<Page> {
+    if (!this.client) {
+      throw new Error('Browser client not initialized');
+    }
 
-    // Discover components
-    const components = await this.discoverComponents(page);
+    const [title, components, interactiveElements, rawLinks, screenshot, domSnapshot, consoleLogs] =
+      await Promise.all([
+        this.client.getTitle(),
+        this.client.queryComponents(this.frameworkPrefix),
+        this.client.queryInteractiveElements(this.frameworkPrefix),
+        this.client.extractLinks(url),
+        this.client.captureScreenshot(),
+        this.client.getDomSnapshot(),
+        this.client.getConsoleLogs(),
+      ]);
 
-    // Discover interactive elements
-    const interactiveElements = await this.discoverInteractiveElements(page);
+    const links = rawLinks
+      .map(link => this.normalizeUrl(link))
+      .filter(link => this.shouldCrawlUrl(link, url));
 
-    // Extract links
-    const links = await this.extractLinks(page, url);
-
-    // Take screenshot
-    const screenshotBuffer = await page.screenshot({ fullPage: false });
-    const screenshot = screenshotBuffer.toString('base64');
+    this.streamArtifacts(context, {
+      url,
+      domSnapshot,
+      screenshot,
+      consoleLogs,
+      capturedAt: new Date(),
+    });
 
     return {
       url,
       title,
-      components,
-      interactiveElements,
+      components: components || [],
+      interactiveElements: interactiveElements || [],
       links,
       screenshot,
       discoveredAt: new Date(),
     };
   }
 
-  /**
-   * Discover components on a page
-   */
-  private async discoverComponents(page: PlaywrightPage): Promise<PageComponent[]> {
-    const components: PageComponent[] = [];
+  private streamArtifacts(context: AgentContext, artifact: WorkflowDiscoveryArtifact): void {
+    context.layers.set('ephemeral', `workflow.artifact:${artifact.url}`, artifact, {
+      ttlMs: 5 * 60 * 1000,
+    });
 
-    try {
-      // Find all elements matching framework prefix
-      const componentElements = await page.locator(`[class*="${this.frameworkPrefix}-"], [id*="${this.frameworkPrefix}-"]`).all();
-
-      // Also search for custom elements with framework prefix
-      const customElements = await page.evaluate((prefix) => {
-        const elements = document.querySelectorAll('*');
-        const found: { tag: string; selector: string; visible: boolean; attrs: Record<string, string> }[] = [];
-
-        elements.forEach((el) => {
-          const tagName = el.tagName.toLowerCase();
-          if (tagName.startsWith(prefix + '-')) {
-            const rect = el.getBoundingClientRect();
-            const visible = rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight;
-
-            // Get attributes
-            const attrs: Record<string, string> = {};
-            for (let i = 0; i < el.attributes.length; i++) {
-              const attr = el.attributes[i];
-              attrs[attr.name] = attr.value;
-            }
-
-            // Generate unique selector
-            const id = el.id ? `#${el.id}` : '';
-            const classes = el.className ? `.${el.className.split(' ').join('.')}` : '';
-            const selector = id || `${tagName}${classes}` || tagName;
-
-            found.push({ tag: tagName, selector, visible, attrs });
-          }
-        });
-
-        return found;
-      }, this.frameworkPrefix);
-
-      // Group by tag name
-      const grouped = new Map<string, { selectors: string[]; visible: boolean; attrs: Record<string, string>[] }>();
-
-      for (const el of customElements) {
-        if (!grouped.has(el.tag)) {
-          grouped.set(el.tag, { selectors: [], visible: false, attrs: [] });
+    if (artifact.domSnapshot) {
+      context.retrieval.index(
+        'workflow-page-dom',
+        [
+          {
+            url: artifact.url,
+            dom: artifact.domSnapshot,
+            length: artifact.domSnapshot.length,
+          },
+        ],
+        {
+          fingerprint: context.fingerprint,
+          idKey: 'url',
+          tagExtractor: () => ['workflow', 'dom'],
+          scoreExtractor: payload => payload.length || 1,
+          metadataExtractor: () => ({ driver: this.driverUsed }),
         }
-
-        const group = grouped.get(el.tag)!;
-        group.selectors.push(el.selector);
-        group.visible = group.visible || el.visible;
-        group.attrs.push(el.attrs);
-      }
-
-      // Convert to PageComponent format
-      for (const [tag, data] of grouped) {
-        components.push({
-          tag,
-          count: data.selectors.length,
-          selectors: data.selectors,
-          visible: data.visible,
-          attributes: data.attrs[0], // Use first instance's attributes as representative
-        });
-      }
-
-      this.logger.debug(`Found ${components.length} component types on page`);
-    } catch (error) {
-      this.logger.warn(`Failed to discover components: ${(error as Error).message}`);
+      );
     }
 
-    return components;
-  }
-
-  /**
-   * Discover interactive elements
-   */
-  private async discoverInteractiveElements(page: PlaywrightPage): Promise<InteractiveElement[]> {
-    try {
-      const elements = await page.evaluate((prefix) => {
-        const interactive: InteractiveElement[] = [];
-
-        // Find buttons
-        document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]').forEach((el) => {
-          const tagName = el.tagName.toLowerCase();
-          interactive.push({
-            type: 'button',
-            selector: el.id ? `#${el.id}` : tagName,
-            text: el.textContent?.trim() || (el as HTMLInputElement).value || '',
-            componentTag: tagName.startsWith(prefix) ? tagName : undefined,
-          });
-        });
-
-        // Find links
-        document.querySelectorAll('a[href]').forEach((el) => {
-          const anchor = el as HTMLAnchorElement;
-          interactive.push({
-            type: 'link',
-            selector: anchor.id ? `#${anchor.id}` : 'a',
-            text: anchor.textContent?.trim() || '',
-            href: anchor.href,
-            action: 'navigate',
-          });
-        });
-
-        // Find inputs
-        document.querySelectorAll('input:not([type="button"]):not([type="submit"]), textarea').forEach((el) => {
-          const tagName = el.tagName.toLowerCase();
-          interactive.push({
-            type: 'input',
-            selector: el.id ? `#${el.id}` : tagName,
-            text: (el as HTMLInputElement).placeholder || '',
-            componentTag: tagName.startsWith(prefix) ? tagName : undefined,
-          });
-        });
-
-        // Find forms
-        document.querySelectorAll('form').forEach((el) => {
-          interactive.push({
-            type: 'form',
-            selector: el.id ? `#${el.id}` : 'form',
-            action: 'submit',
-          });
-        });
-
-        // Find selects
-        document.querySelectorAll('select').forEach((el) => {
-          const tagName = el.tagName.toLowerCase();
-          interactive.push({
-            type: 'select',
-            selector: el.id ? `#${el.id}` : tagName,
-            componentTag: tagName.startsWith(prefix) ? tagName : undefined,
-          });
-        });
-
-        return interactive;
-      }, this.frameworkPrefix);
-
-      this.logger.debug(`Found ${elements.length} interactive elements`);
-      return elements;
-    } catch (error) {
-      this.logger.warn(`Failed to discover interactive elements: ${(error as Error).message}`);
-      return [];
+    if (artifact.screenshot) {
+      context.retrieval.index(
+        'workflow-screenshots',
+        [
+          {
+            url: artifact.url,
+            screenshot: artifact.screenshot,
+          },
+        ],
+        {
+          fingerprint: context.fingerprint,
+          idKey: 'url',
+          tagExtractor: () => ['workflow', 'screenshot'],
+          scoreExtractor: () => 1,
+          metadataExtractor: () => ({ driver: this.driverUsed }),
+        }
+      );
     }
   }
 
-  /**
-   * Extract links from page
-   */
-  private async extractLinks(page: PlaywrightPage, baseUrl: string): Promise<string[]> {
-    try {
-      const links = await page.evaluate(() => {
-        const anchors = Array.from(document.querySelectorAll('a[href]'));
-        return anchors.map((a) => (a as HTMLAnchorElement).href);
-      });
-
-      // Filter and normalize links
-      return links
-        .map((link) => this.normalizeUrl(link))
-        .filter((link) => this.shouldCrawlUrl(link, baseUrl));
-    } catch (error) {
-      this.logger.warn(`Failed to extract links: ${(error as Error).message}`);
-      return [];
-    }
-  }
 
   /**
    * Build workflows from discovered pages
@@ -612,6 +524,41 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
       pages: Array.from(data.pages),
       patterns: Array.from(data.patterns),
     }));
+  }
+
+  private getDriverConfig(config: Config): WorkflowDiscoveryConfig {
+    return (
+      config.workflowDiscovery || {
+        driver: 'local',
+        maxDepth: this.maxDepth,
+        maxPages: this.maxPages,
+      }
+    );
+  }
+
+  private createBrowserClient(config: Config): WorkflowDiscoveryBrowserClient {
+    if (this.clientFactory) {
+      return this.clientFactory(config);
+    }
+
+    const driverConfig = this.getDriverConfig(config);
+    if (driverConfig.driver === 'mcp') {
+      if (!driverConfig.mcp?.endpoint) {
+        throw new Error('workflowDiscovery.mcp.endpoint is required when driver is set to "mcp"');
+      }
+      return new McpPlaywrightClient({
+        endpoint: driverConfig.mcp.endpoint,
+        timeoutMs: driverConfig.mcp.timeoutMs,
+        credentials: driverConfig.mcp.credentials,
+        tools: driverConfig.mcp.tools,
+      });
+    }
+
+    return new LocalPlaywrightClient({
+      headless: config.testing.headless !== false,
+      navigationTimeoutMs: config.testing.timeout,
+      postNavigationDelayMs: 1000,
+    });
   }
 
   /**

@@ -650,8 +650,25 @@ interface Config {
     fixTests: boolean;
     createBranches: boolean;
   };
+
+  workflowDiscovery?: {
+    driver: 'local' | 'mcp';
+    maxDepth?: number;
+    maxPages?: number;
+    mcp?: {
+      endpoint: string;
+      timeoutMs?: number;
+      credentials?: {
+        token?: string;
+        username?: string;
+        password?: string;
+      };
+    };
+  };
 }
 ```
+
+The `workflowDiscovery` block controls whether the agent launches a local Playwright browser (`driver: "local"`) or issues MCP tool calls to a remote Playwright session (`driver: "mcp"`). When using MCP you can configure the endpoint and credentials directly in the config or via the environment variables `PIXELDUST_MCP_ENDPOINT`, `PIXELDUST_MCP_TOKEN`, `PIXELDUST_MCP_USERNAME`, `PIXELDUST_MCP_PASSWORD`, and `PIXELDUST_MCP_TIMEOUT`.
 
 ## CLI Commands
 
@@ -697,11 +714,13 @@ npx playwright install chromium
 pixeldust discover-workflows --url http://localhost:3000
 pixeldust discover-workflows --config .pixeldustrc.json
 pixeldust discover-workflows --url http://localhost:3000 --output ./workflows.md --format markdown
+pixeldust discover-workflows --driver mcp --mcp-endpoint http://localhost:3333 --mcp-token $PIXELDUST_MCP_TOKEN
 
 # Run
 pixeldust test
 pixeldust test --config custom.json
 pixeldust test --versions 1.24.0,2.0.0
+pixeldust test --workflow-driver mcp --workflow-mcp-endpoint http://localhost:3333 --workflow-mcp-token $PIXELDUST_MCP_TOKEN
 
 # Review
 pixeldust list

@@ -7,7 +7,7 @@ import open from 'open';
 import { ConfigLoader } from '../core/config-loader';
 import { DatabaseManager } from '../storage/database';
 import { WorkflowDiscoveryAgent } from '../agents/workflow-discovery-agent';
-import { Session, SessionState, Config } from '../types';
+import { Session, SessionState, Config, WorkflowDiscoveryDriver } from '../types';
 import { ReportGenerator } from '../core/report-generator';
 import { WebServer } from '../web/server';
 import { WorkflowReporter } from '../utils/workflow-reporter';
@@ -81,6 +81,12 @@ program
   .option('-v, --versions <versions>', 'Comma-separated list of versions to test')
   .option('--skip-browser-check', 'Skip Playwright browser installation check')
   .option('--orchestrator <mode>', ORCHESTRATOR_OPTION_DESCRIPTION)
+  .option('--workflow-driver <driver>', 'Override workflow discovery driver (local | mcp)')
+  .option('--workflow-mcp-endpoint <url>', 'Override MCP endpoint for workflow discovery')
+  .option('--workflow-mcp-token <token>', 'Set MCP bearer token for workflow discovery')
+  .option('--workflow-mcp-username <username>', 'Set MCP basic auth username for workflow discovery')
+  .option('--workflow-mcp-password <password>', 'Set MCP basic auth password for workflow discovery')
+  .option('--workflow-mcp-timeout <ms>', 'Set MCP request timeout (ms) for workflow discovery')
   .action(async (options) => {
     const spinner = ora('Loading configuration').start();
 
@@ -111,6 +117,15 @@ program
       if (options.versions) {
         config.framework.versions = options.versions.split(',').map((v: string) => v.trim());
       }
+
+      applyWorkflowDriverOverrides(config, {
+        driver: options.workflowDriver,
+        endpoint: options.workflowMcpEndpoint,
+        token: options.workflowMcpToken,
+        username: options.workflowMcpUsername,
+        password: options.workflowMcpPassword,
+        timeout: options.workflowMcpTimeout,
+      });
 
       spinner.succeed('Configuration loaded');
 
@@ -613,6 +628,12 @@ program
   .option('--max-depth <number>', 'Maximum crawl depth', '3')
   .option('--max-pages <number>', 'Maximum pages to crawl', '50')
   .option('--no-screenshots', 'Skip taking screenshots')
+  .option('--driver <driver>', 'Workflow discovery driver (local | mcp)')
+  .option('--mcp-endpoint <url>', 'MCP endpoint for remote workflow discovery')
+  .option('--mcp-token <token>', 'MCP bearer token for remote workflow discovery')
+  .option('--mcp-username <username>', 'MCP basic auth username for workflow discovery')
+  .option('--mcp-password <password>', 'MCP basic auth password for workflow discovery')
+  .option('--mcp-timeout <ms>', 'MCP request timeout (ms) for workflow discovery')
   .action(async (options) => {
     const spinner = ora('Starting workflow discovery').start();
 
@@ -703,6 +724,11 @@ program
             format: ['markdown'],
             outputPath: './reports',
           },
+          workflowDiscovery: {
+            driver: 'local',
+            maxDepth: parseInt(options.maxDepth, 10) || 3,
+            maxPages: parseInt(options.maxPages, 10) || 50,
+          },
         } as Config;
       } else {
         spinner.fail('Either --config or --url must be provided');
@@ -710,6 +736,33 @@ program
         console.log('  pixeldust discover-workflows --config .pixeldustrc.json');
         console.log('  pixeldust discover-workflows --url http://localhost:3000\n');
         process.exit(1);
+      }
+
+      applyWorkflowDriverOverrides(config, {
+        driver: options.driver,
+        endpoint: options.mcpEndpoint,
+        token: options.mcpToken,
+        username: options.mcpUsername,
+        password: options.mcpPassword,
+        timeout: options.mcpTimeout,
+      });
+
+      if (options.maxDepth) {
+        config.workflowDiscovery = config.workflowDiscovery || {
+          driver: 'local',
+          maxDepth: 3,
+          maxPages: 50,
+        };
+        config.workflowDiscovery.maxDepth = parseInt(options.maxDepth, 10);
+      }
+
+      if (options.maxPages) {
+        config.workflowDiscovery = config.workflowDiscovery || {
+          driver: 'local',
+          maxDepth: 3,
+          maxPages: 50,
+        };
+        config.workflowDiscovery.maxPages = parseInt(options.maxPages, 10);
       }
 
       // Create session for workflow discovery
@@ -851,6 +904,60 @@ function parseOrchestratorOption(mode?: string): OrchestratorMode | undefined {
   }
 
   return normalized as OrchestratorMode;
+}
+
+interface WorkflowDriverOverrideOptions {
+  driver?: string;
+  endpoint?: string;
+  token?: string;
+  username?: string;
+  password?: string;
+  timeout?: string | number;
+}
+
+function applyWorkflowDriverOverrides(config: Config, overrides: WorkflowDriverOverrideOptions): void {
+  if (!config.workflowDiscovery) {
+    config.workflowDiscovery = {
+      driver: 'local',
+      maxDepth: 3,
+      maxPages: 50,
+    };
+  }
+
+  if (overrides.driver) {
+    const normalized = overrides.driver.toLowerCase();
+    if (normalized !== 'local' && normalized !== 'mcp') {
+      throw new Error(`Invalid workflow driver: ${overrides.driver}`);
+    }
+    config.workflowDiscovery.driver = normalized as WorkflowDiscoveryDriver;
+  }
+
+  if (
+    overrides.endpoint ||
+    overrides.token ||
+    overrides.username ||
+    overrides.password ||
+    overrides.timeout !== undefined
+  ) {
+    const timeoutValue =
+      overrides.timeout !== undefined
+        ? typeof overrides.timeout === 'string'
+          ? parseInt(overrides.timeout, 10)
+          : overrides.timeout
+        : config.workflowDiscovery.mcp?.timeoutMs;
+
+    config.workflowDiscovery.mcp = {
+      ...config.workflowDiscovery.mcp,
+      endpoint: overrides.endpoint || config.workflowDiscovery.mcp?.endpoint || '',
+      timeoutMs: timeoutValue,
+      credentials: {
+        ...(config.workflowDiscovery.mcp?.credentials || {}),
+        token: overrides.token || config.workflowDiscovery.mcp?.credentials?.token,
+        username: overrides.username || config.workflowDiscovery.mcp?.credentials?.username,
+        password: overrides.password || config.workflowDiscovery.mcp?.credentials?.password,
+      },
+    };
+  }
 }
 
 async function runStateMachine(

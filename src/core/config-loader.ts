@@ -5,6 +5,43 @@ import { Config } from '../types';
 /**
  * Zod schema for configuration validation
  */
+const WorkflowDiscoverySchema = z
+  .object({
+    driver: z.enum(['local', 'mcp']).default('local'),
+    maxDepth: z.number().min(1).max(10).default(3),
+    maxPages: z.number().min(1).max(200).default(50),
+    mcp: z
+      .object({
+        endpoint: z.string().url(),
+        timeoutMs: z.number().optional(),
+        credentials: z
+          .object({
+            token: z.string().optional(),
+            username: z.string().optional(),
+            password: z.string().optional(),
+          })
+          .partial()
+          .optional(),
+        tools: z
+          .object({
+            start: z.string().optional(),
+            goto: z.string().optional(),
+            snapshot: z.string().optional(),
+            metadata: z.string().optional(),
+            components: z.string().optional(),
+            interactive: z.string().optional(),
+            links: z.string().optional(),
+            screenshot: z.string().optional(),
+            console: z.string().optional(),
+            close: z.string().optional(),
+          })
+          .partial()
+          .optional(),
+      })
+      .optional(),
+  })
+  .default({ driver: 'local', maxDepth: 3, maxPages: 50 });
+
 const ConfigSchema = z.object({
   framework: z.object({
     name: z.string(),
@@ -90,6 +127,7 @@ const ConfigSchema = z.object({
       usePipeline: z.boolean().optional().default(true),
     })
     .default({ mode: 'hybrid', usePipeline: true }),
+  workflowDiscovery: WorkflowDiscoverySchema,
 });
 
 /**
@@ -140,6 +178,41 @@ export class ConfigLoader {
           accessKeyId: config.storage.s3.accessKeyId || process.env.AWS_ACCESS_KEY_ID,
           secretAccessKey: config.storage.s3.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY,
         } : undefined,
+      },
+      workflowDiscovery: {
+        ...config.workflowDiscovery,
+        mcp: config.workflowDiscovery?.mcp
+          ? {
+              ...config.workflowDiscovery.mcp,
+              endpoint: config.workflowDiscovery.mcp.endpoint || process.env.PIXELDUST_MCP_ENDPOINT,
+              timeoutMs:
+                config.workflowDiscovery.mcp.timeoutMs ||
+                (process.env.PIXELDUST_MCP_TIMEOUT
+                  ? parseInt(process.env.PIXELDUST_MCP_TIMEOUT, 10)
+                  : undefined),
+              credentials: {
+                ...config.workflowDiscovery.mcp.credentials,
+                token:
+                  config.workflowDiscovery.mcp.credentials?.token || process.env.PIXELDUST_MCP_TOKEN,
+                username:
+                  config.workflowDiscovery.mcp.credentials?.username || process.env.PIXELDUST_MCP_USERNAME,
+                password:
+                  config.workflowDiscovery.mcp.credentials?.password || process.env.PIXELDUST_MCP_PASSWORD,
+              },
+            }
+          : config.workflowDiscovery?.driver === 'mcp'
+          ? {
+              endpoint: process.env.PIXELDUST_MCP_ENDPOINT || '',
+              timeoutMs: process.env.PIXELDUST_MCP_TIMEOUT
+                ? parseInt(process.env.PIXELDUST_MCP_TIMEOUT, 10)
+                : undefined,
+              credentials: {
+                token: process.env.PIXELDUST_MCP_TOKEN,
+                username: process.env.PIXELDUST_MCP_USERNAME,
+                password: process.env.PIXELDUST_MCP_PASSWORD,
+              },
+            }
+          : config.workflowDiscovery?.mcp,
       },
     };
   }
@@ -205,6 +278,11 @@ export class ConfigLoader {
       orchestration: {
         mode: 'hybrid',
         usePipeline: true,
+      },
+      workflowDiscovery: {
+        driver: 'local',
+        maxDepth: 3,
+        maxPages: 50,
       },
     };
   }
