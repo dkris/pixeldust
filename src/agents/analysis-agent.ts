@@ -36,10 +36,17 @@ export class AnalysisAgent extends BaseAgent {
 
   async execute(context: AgentContext): Promise<AgentResult> {
     return this.executeWithTracking(context, async () => {
-      const { config, session, data } = context;
-      const testResults = data?.results || [];
-
       try {
+        const { config, session, data } = context;
+        const executionResults = data?.[AgentType.EXECUTION]?.results;
+
+        if (!Array.isArray(executionResults) || executionResults.length === 0) {
+          throw new Error(
+            'AnalysisAgent requires execution-stage results to perform comparisons'
+          );
+        }
+
+        const testResults = executionResults;
         this.logger.info('Analyzing differences between versions');
 
         const comparisons: ComparisonResult[] = [];
