@@ -136,8 +136,11 @@ export class OrchestratorAgent extends BaseAgent {
       throw new Error('At least 2 versions are required for comparison');
     }
 
-    // Create session in database
-    this.database.createSession(context.session);
+    // Ensure the session exists in the database (it may have been created earlier)
+    const existingSession = this.database.getSession(context.session.id);
+    if (!existingSession) {
+      this.database.createSession(context.session);
+    }
 
     // Decide next state based on configuration
     const nextState = config.application

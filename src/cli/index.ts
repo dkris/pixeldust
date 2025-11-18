@@ -142,6 +142,10 @@ program
       // Initialize database
       const db = new DatabaseManager();
 
+      // Persist the session immediately so other agents can safely reference it
+      // even before the orchestrator reaches the INITIALIZING state.
+      db.createSession(session);
+
       // Create orchestrator
       const orchestratorOverride = parseOrchestratorOption(options.orchestrator);
       const { orchestrator, mode } = createOrchestrator(db, config, {
