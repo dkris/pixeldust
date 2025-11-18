@@ -118,9 +118,10 @@ export class HybridOrchestratorAgent extends BaseAgent {
 
     // Progress logging
     this.eventBus.on(EventType.STAGE_COMPLETED, (event) => {
-      const { stageName, duration } = event.metadata || {};
+      const { stageName } = event.metadata || {};
+      const { duration } = event.data || {};
       this.logger.info(
-        `✓ Stage completed: ${stageName} (${duration}ms)`
+        `✓ Stage completed: ${stageName} (${duration ?? 'unknown'}ms)`
       );
     });
 

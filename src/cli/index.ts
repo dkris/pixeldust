@@ -80,6 +80,7 @@ program
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-v, --versions <versions>', 'Comma-separated list of versions to test')
   .option('--skip-browser-check', 'Skip Playwright browser installation check')
+  .option('--force-regenerate', 'Regenerate tests even if cached templates exist')
   .option('--orchestrator <mode>', ORCHESTRATOR_OPTION_DESCRIPTION)
   .option('--workflow-driver <driver>', 'Override workflow discovery driver (local | mcp)')
   .option('--workflow-mcp-endpoint <url>', 'Override MCP endpoint for workflow discovery')
@@ -116,6 +117,10 @@ program
       // Override versions if provided
       if (options.versions) {
         config.framework.versions = options.versions.split(',').map((v: string) => v.trim());
+      }
+
+      if (options.forceRegenerate) {
+        config.forceRegenerateTests = true;
       }
 
       applyWorkflowDriverOverrides(config, {

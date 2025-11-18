@@ -22,6 +22,7 @@ export interface Config {
   upgrade?: UpgradeConfig;
   orchestration?: OrchestrationConfig;
   workflowDiscovery?: WorkflowDiscoveryConfig;
+  forceRegenerateTests?: boolean;
 }
 
 export interface OrchestrationConfig {
