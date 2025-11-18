@@ -16,6 +16,7 @@ import { EventBus, EventType } from '../core/event-bus';
 import { PipelineExecutor, StageContext } from '../core/pipeline';
 import { AgentPipelineFactory } from '../core/agent-stage-adapter';
 import { OrchestratorAgent } from './orchestrator-agent';
+import { WorkflowDiscoveryAgent } from './workflow-discovery-agent';
 
 /**
  * Hybrid Orchestrator Agent
@@ -54,6 +55,7 @@ export class HybridOrchestratorAgent extends BaseAgent {
 
     this.agents.set(AgentType.APPLICATION_LOADER, new ApplicationLoaderAgent(db));
     this.agents.set(AgentType.ENVIRONMENT, new EnvironmentAgent(db));
+    this.agents.set(AgentType.WORKFLOW_DISCOVERY, new WorkflowDiscoveryAgent(db));
     this.agents.set(AgentType.TEST_GENERATION, new TestGenerationAgent(db));
     this.agents.set(AgentType.EXECUTION, new ExecutionAgent(db));
     this.agents.set(AgentType.ANALYSIS, new AnalysisAgent(db));

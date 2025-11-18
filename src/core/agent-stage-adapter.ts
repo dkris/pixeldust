@@ -256,12 +256,33 @@ export class AgentPipelineFactory {
       );
     }
 
+    // Workflow Discovery
+    const workflow = agents.get(AgentType.WORKFLOW_DISCOVERY);
+    if (workflow) {
+      stages.push(
+        this.createStage(workflow, {
+          dependencies: env
+            ? [AgentType.ENVIRONMENT]
+            : appLoader
+            ? [AgentType.APPLICATION_LOADER]
+            : [],
+        })
+      );
+    }
+
     // Test Generation
     const testGen = agents.get(AgentType.TEST_GENERATION);
     if (testGen) {
+      const testGenDependencies = workflow
+        ? [AgentType.WORKFLOW_DISCOVERY]
+        : env
+        ? [AgentType.ENVIRONMENT]
+        : appLoader
+        ? [AgentType.APPLICATION_LOADER]
+        : [];
       stages.push(
         this.createStage(testGen, {
-          dependencies: env ? [AgentType.ENVIRONMENT] : [],
+          dependencies: testGenDependencies,
         })
       );
     }
