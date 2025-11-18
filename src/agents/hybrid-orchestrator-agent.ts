@@ -28,15 +28,15 @@ import { AgentPipelineFactory } from '../core/agent-stage-adapter';
  * Maintains backward compatibility with state machine approach
  */
 export class HybridOrchestratorAgent extends BaseAgent {
-  private db: DatabaseManager;
+  private readonly database: DatabaseManager;
   private agents: Map<AgentType, BaseAgent>;
   private eventBus: EventBus;
   private pipelineExecutor: PipelineExecutor;
   private usePipeline: boolean;
 
   constructor(db: DatabaseManager, options?: { usePipeline?: boolean }) {
-    super(AgentType.ORCHESTRATOR);
-    this.db = db;
+    super(AgentType.ORCHESTRATOR, db);
+    this.database = db;
     this.agents = new Map();
     this.eventBus = new EventBus({ db });
     this.pipelineExecutor = new PipelineExecutor(this.eventBus);
@@ -57,7 +57,7 @@ export class HybridOrchestratorAgent extends BaseAgent {
     this.agents.set(AgentType.REMEDIATION, new RemediationAgent());
     this.agents.set(AgentType.IMPLEMENTATION, new ImplementationAgent());
     this.agents.set(AgentType.REVIEW, new ReviewAgent());
-    this.agents.set(AgentType.EVALUATION, new EvaluationAgent(this.db));
+    this.agents.set(AgentType.EVALUATION, new EvaluationAgent(this.database));
   }
 
   /**
@@ -176,7 +176,7 @@ export class HybridOrchestratorAgent extends BaseAgent {
         );
 
         // Update session state
-        this.db.updateSessionState(session.id, SessionState.ERROR);
+        this.database.updateSessionState(session.id, SessionState.ERROR);
 
         return this.failure(
           result.error || new Error('Pipeline execution failed'),
@@ -189,7 +189,7 @@ export class HybridOrchestratorAgent extends BaseAgent {
       );
 
       // Update session state
-      this.db.updateSessionState(session.id, SessionState.COMPLETE);
+      this.database.updateSessionState(session.id, SessionState.COMPLETE);
 
       return this.success(
         {
@@ -201,7 +201,7 @@ export class HybridOrchestratorAgent extends BaseAgent {
       );
     } catch (error) {
       this.logger.error('Pipeline execution error', error as Error);
-      this.db.updateSessionState(session.id, SessionState.ERROR);
+      this.database.updateSessionState(session.id, SessionState.ERROR);
       return this.failure(error as Error, SessionState.ERROR);
     }
   }

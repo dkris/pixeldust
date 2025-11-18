@@ -181,6 +181,7 @@ export interface AgentResult {
   data?: any;
   error?: Error;
   nextState?: SessionState;
+  tokensUsed?: number;
 }
 
 // ============================================================================

@@ -150,7 +150,11 @@ export abstract class BaseAgent implements Agent {
     try {
       await this.db.trackAgentExecution(execution);
     } catch (error) {
-      this.logger.warn('Failed to track execution', error);
+      const meta =
+        error instanceof Error
+          ? { message: error.message, stack: error.stack }
+          : { error };
+      this.logger.warn('Failed to track execution', meta);
     }
   }
 
