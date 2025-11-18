@@ -43,6 +43,7 @@ export class WorkflowReporter {
     lines.push('');
     lines.push(`**Generated**: ${result.discoveredAt.toISOString()}`);
     lines.push(`**Application**: ${result.applicationUrl}`);
+    lines.push(`**Driver**: ${result.driver}`);
     lines.push(`**Pages Discovered**: ${result.pages.length}`);
     lines.push(`**Workflows Identified**: ${result.workflows.length}`);
     lines.push(`**Components Found**: ${result.componentUsage.length}`);
