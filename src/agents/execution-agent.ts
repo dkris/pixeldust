@@ -24,7 +24,15 @@ export class ExecutionAgent extends BaseAgent {
   async execute(context: AgentContext): Promise<AgentResult> {
     return this.executeWithTracking(context, async () => {
       const { config, session, data } = context;
-      const testSuites = data?.testSuites || [];
+      const stageScopedSuites = data?.[AgentType.TEST_GENERATION]?.testSuites;
+      const legacySuites = data?.testSuites;
+      const testSuites = stageScopedSuites || legacySuites;
+
+      if (!testSuites || testSuites.length === 0) {
+        throw new Error(
+          'ExecutionAgent requires test suites from the TEST_GENERATION stage, but none were found in the current context.'
+        );
+      }
       const containers = this.resolveContainers(data);
 
       try {

@@ -139,9 +139,17 @@ export class AgentStageAdapter extends BasePipelineStage {
       });
 
       // Prepare agent context from stage context
-      const agentData = this.inputDataKey
+      const agentData: Record<string, any> = this.inputDataKey
         ? { [this.inputDataKey]: context.get(this.inputDataKey) }
         : context.toObject();
+
+      if (
+        this.agent.type === AgentType.EXECUTION &&
+        agentData?.[AgentType.TEST_GENERATION]?.testSuites &&
+        !agentData.testSuites
+      ) {
+        agentData.testSuites = agentData[AgentType.TEST_GENERATION].testSuites;
+      }
 
       const agentContext = context.createAgentContext(agentData);
 
