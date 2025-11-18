@@ -15,6 +15,8 @@ import { WorkflowReporter } from '../utils/workflow-reporter';
 import Logger from '../utils/logger';
 import fs from 'fs/promises';
 import path from 'path';
+import { EventBus } from '../core/event-bus';
+import { StageContext } from '../core/pipeline';
 
 const program = new Command();
 const logger = new Logger('CLI');
@@ -694,18 +696,18 @@ program
 
       // Run workflow discovery
       const workflowAgent = new WorkflowDiscoveryAgent();
-      const result = await workflowAgent.execute({
-        session,
-        config,
-        data: {
+      const eventBus = new EventBus();
+      const stageContext = new StageContext(session, config, eventBus);
+      const result = await workflowAgent.execute(
+        stageContext.createAgentContext({
           containers: [{
             url: applicationUrl,
             version: 'current',
             containerId: 'standalone',
             port: new URL(applicationUrl).port ? parseInt(new URL(applicationUrl).port, 10) : 80,
           }],
-        },
-      });
+        })
+      );
 
       if (!result.success) {
         throw result.error || new Error('Workflow discovery failed');
@@ -814,6 +816,8 @@ async function runStateMachine(
 ): Promise<void> {
   let currentSession = session;
   let data: any = {};
+  const eventBus = new EventBus({ db });
+  const stageContext = new StageContext(currentSession, config, eventBus);
 
   while (
     currentSession.state !== SessionState.COMPLETE &&
@@ -822,11 +826,9 @@ async function runStateMachine(
   ) {
     spinner.start(`State: ${currentSession.state}`);
 
-    const result = await orchestrator.execute({
-      session: currentSession,
-      config,
-      data,
-    });
+    const result = await orchestrator.execute(
+      stageContext.createAgentContext(data)
+    );
 
     if (!result.success) {
       spinner.fail(`Failed in state ${currentSession.state}`);
