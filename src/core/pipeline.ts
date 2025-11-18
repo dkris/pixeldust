@@ -1,24 +1,48 @@
-import { Session, SessionState, Config } from '../types';
+import { Session, SessionState, Config, AgentContext } from '../types';
 import { EventBus, EventType, EventPayload } from './event-bus';
+import { LayeredContextManager, ContextLayerType } from './context-manager';
+import { RetrievalService } from '../services/retrieval-service';
+import { AgentMemory } from '../services/agent-memory';
+import { ResilienceManager } from './resilience';
 import Logger from '../utils/logger';
 
 /**
  * Pipeline Stage Context
  * Immutable context passed between pipeline stages
  */
+export interface StageContextOptions {
+  contextManager?: LayeredContextManager;
+  retrievalService?: RetrievalService;
+  agentMemory?: AgentMemory;
+  resilienceManager?: ResilienceManager;
+}
+
 export class StageContext {
   private data: Map<string, any>;
   private parent?: StageContext;
+  private contextManager: LayeredContextManager;
+  private retrievalService: RetrievalService;
+  private agentMemory: AgentMemory;
+  private resilienceManager: ResilienceManager;
 
   constructor(
     public readonly session: Session,
     public readonly config: Config,
     public readonly eventBus: EventBus,
     data?: Map<string, any>,
-    parent?: StageContext
+    parent?: StageContext,
+    options?: StageContextOptions
   ) {
     this.data = data || new Map();
     this.parent = parent;
+    this.contextManager =
+      options?.contextManager || parent?.contextManager || new LayeredContextManager();
+    this.retrievalService =
+      options?.retrievalService || parent?.retrievalService || new RetrievalService();
+    this.agentMemory =
+      options?.agentMemory || parent?.agentMemory || new AgentMemory(this.eventBus);
+    this.resilienceManager =
+      options?.resilienceManager || parent?.resilienceManager || new ResilienceManager();
   }
 
   /**
@@ -62,6 +86,50 @@ export class StageContext {
   }
 
   /**
+   * Access layered context manager
+   */
+  get layers(): LayeredContextManager {
+    return this.contextManager;
+  }
+
+  /**
+   * Access retrieval service
+   */
+  get retrieval(): RetrievalService {
+    return this.retrievalService;
+  }
+
+  /**
+   * Access memory service
+   */
+  get memory(): AgentMemory {
+    return this.agentMemory;
+  }
+
+  /**
+   * Access resilience manager
+   */
+  get resilience(): ResilienceManager {
+    return this.resilienceManager;
+  }
+
+  /**
+   * Create agent context payload
+   */
+  createAgentContext(data?: Record<string, any>): AgentContext {
+    return {
+      session: this.session,
+      config: this.config,
+      data,
+      layers: this.contextManager,
+      retrieval: this.retrievalService,
+      memory: this.agentMemory,
+      fingerprint: this.contextManager.fingerprint(),
+      pruneLayers: (layers?: ContextLayerType[]) => this.pruneLayers(layers),
+    };
+  }
+
+  /**
    * Get all data as object (for debugging)
    */
   toObject(): Record<string, any> {
@@ -89,8 +157,17 @@ export class StageContext {
       sessionId: this.session.id,
       timestamp: Date.now(),
       data,
-      metadata,
+      metadata: {
+        contextFingerprint: this.contextManager.fingerprint(),
+        contextVersion: this.contextManager.getVersion(),
+        ...metadata,
+      },
     });
+  }
+
+  pruneLayers(layers?: ContextLayerType[]): void {
+    this.contextManager.prune(layers);
+    this.agentMemory.pruneExpired();
   }
 }
 
@@ -290,6 +367,7 @@ export class PipelineExecutor {
           if (stage.cleanup) {
             await stage.cleanup();
           }
+          context.pruneLayers(['ephemeral']);
         }
       }
 

@@ -1,5 +1,16 @@
 import { BaseAgent } from './base-agent';
-import { AgentType, AgentContext, AgentResult, TestSuite, Test, TestCategory } from '../types';
+import {
+  AgentType,
+  AgentContext,
+  AgentResult,
+  TestSuite,
+  Test,
+  TestCategory,
+  WorkflowDiscoveryResult,
+  Workflow,
+  Page,
+  ComponentUsageSummary,
+} from '../types';
 import Anthropic from '@anthropic-ai/sdk';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
@@ -33,15 +44,15 @@ export class TestGenerationAgent extends BaseAgent {
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session, data } = context;
+    const { config, session } = context;
 
     try {
       this.logger.info('Generating test suites');
 
       const testSuites: TestSuite[] = [];
 
-      // Check if workflow data is available
-      const workflowData = data?.pages && data?.workflows ? data : null;
+      // Check if workflow data is available via layered context/retrieval
+      const workflowData = this.getWorkflowData(context);
       if (workflowData) {
         this.logger.info(`Using workflow data: ${workflowData.pages.length} pages, ${workflowData.workflows.length} workflows`);
       }
@@ -61,7 +72,7 @@ export class TestGenerationAgent extends BaseAgent {
       for (const component of validComponents) {
         this.logger.info(`Generating tests for component: ${component}`);
 
-        const tests = await this.generateTestsForComponent(component, config, workflowData);
+        const tests = await this.generateTestsForComponent(component, config, workflowData, context);
 
         const testSuite: TestSuite = {
           id: uuidv4(),
@@ -86,7 +97,7 @@ export class TestGenerationAgent extends BaseAgent {
     }
   }
 
-  private async discoverComponents(config: any, workflowData: any = null): Promise<string[]> {
+  private async discoverComponents(config: any, workflowData: WorkflowDiscoveryResult | null = null): Promise<string[]> {
     let components: string[] = [];
 
     // Priority 1: Use components from workflow discovery if available
@@ -420,7 +431,12 @@ export class TestGenerationAgent extends BaseAgent {
     return crypto.createHash('sha256').update(content).digest('hex');
   }
 
-  private async generateTestsForComponent(component: string, config: any, workflowData: any = null): Promise<Test[]> {
+  private async generateTestsForComponent(
+    component: string,
+    config: any,
+    workflowData: WorkflowDiscoveryResult | null = null,
+    context?: AgentContext
+  ): Promise<Test[]> {
     const frameworkName = config.framework.name;
     const frameworkVersion = config.versions?.[0] || config.framework.versions?.[0] || '1.0.0';
 
@@ -511,6 +527,11 @@ Each test:
 - Playwright code
 
 Focus on core functionality for version testing. Generate 6-8 tests.`;
+    }
+
+    const promptHints = context?.memory.promptHints('TEST_GENERATION');
+    if (promptHints) {
+      prompt += `\n\nKNOWN REGRESSIONS OR HINTS:\n${promptHints}`;
     }
 
     try {
@@ -631,6 +652,12 @@ Focus on core functionality for version testing. Generate 6-8 tests.`;
       // Cache the generated tests for future use
       await this.cacheTests(component, frameworkName, frameworkVersion, tests);
 
+      context?.memory.remember('TEST_GENERATION', `suite-${component}`, `Generated ${tests.length} tests`, {
+        scope: 'short',
+        ttlMs: 60 * 60 * 1000,
+        contextFingerprint: context?.fingerprint,
+      });
+
       return tests;
 
     } catch (error) {
@@ -685,6 +712,38 @@ test('${component} visual snapshot', async ({ page }) => {
 `,
       },
     ];
+  }
+
+  private getWorkflowData(context: AgentContext): WorkflowDiscoveryResult | null {
+    const layeredPages = context.layers.get<Page[]>('workflow.pages');
+    const layeredWorkflows = context.layers.get<Workflow[]>('workflow.workflows');
+    const layeredUsage = context.layers.get<ComponentUsageSummary[]>('workflow.componentUsage');
+
+    if (layeredPages && layeredWorkflows) {
+      return {
+        pages: layeredPages,
+        workflows: layeredWorkflows,
+        componentUsage: layeredUsage || [],
+        discoveredAt: new Date(),
+        applicationUrl: context.config.application?.path || 'unknown',
+      };
+    }
+
+    const workflowRecords = context.retrieval.request('workflows', { sortBy: 'score', limit: 5 });
+    const pageRecords = context.retrieval.request('workflow-pages', { sortBy: 'score', limit: 5 });
+    const usageRecords = context.retrieval.request('component-usage', { sortBy: 'score', limit: 10 });
+
+    if (workflowRecords.length > 0 || pageRecords.length > 0) {
+      return {
+        workflows: workflowRecords.map(record => record.payload as Workflow),
+        pages: pageRecords.map(record => record.payload as Page),
+        componentUsage: usageRecords.map(record => record.payload as ComponentUsageSummary),
+        discoveredAt: new Date(workflowRecords[0]?.timestamp || Date.now()),
+        applicationUrl: context.config.application?.path || 'unknown',
+      };
+    }
+
+    return context.data?.pages && context.data?.workflows ? (context.data as WorkflowDiscoveryResult) : null;
   }
 }
 

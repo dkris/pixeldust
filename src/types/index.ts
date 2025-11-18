@@ -1,6 +1,9 @@
 /**
  * Core type definitions for the Agentic UI Testing System
  */
+import type { LayeredContextManager, ContextLayerType } from '../core/context-manager';
+import type { RetrievalService } from '../services/retrieval-service';
+import type { AgentMemory } from '../services/agent-memory';
 
 // ============================================================================
 // Configuration Types
@@ -174,6 +177,11 @@ export interface AgentContext {
   session: Session;
   config: Config;
   data?: Record<string, any>;
+  layers: LayeredContextManager;
+  retrieval: RetrievalService;
+  memory: AgentMemory;
+  fingerprint: string;
+  pruneLayers: (layers?: ContextLayerType[]) => void;
 }
 
 export interface AgentResult {

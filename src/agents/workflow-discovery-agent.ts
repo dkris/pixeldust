@@ -82,6 +82,48 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
         applicationUrl,
       };
 
+      // Publish layered context artifacts for downstream agents
+      context.layers.set('shared', 'workflow.pages', result.pages, { ttlMs: 10 * 60 * 1000 });
+      context.layers.set('shared', 'workflow.workflows', result.workflows, { ttlMs: 10 * 60 * 1000 });
+      context.layers.set('persistent', 'workflow.componentUsage', result.componentUsage);
+
+      // Index artifacts for selective retrieval
+      context.retrieval.index('workflow-pages', result.pages, {
+        fingerprint: context.fingerprint,
+        idKey: 'url',
+        tagExtractor: (page: Page) => page.components?.map(c => c.tag) || [],
+        scoreExtractor: (page: Page) => page.components?.length || 1,
+        metadataExtractor: (page: Page) => ({ title: page.title }),
+      });
+
+      context.retrieval.index('workflows', result.workflows, {
+        fingerprint: context.fingerprint,
+        idKey: 'id',
+        tagExtractor: (workflow: Workflow) => workflow.components || [],
+        scoreExtractor: (workflow: Workflow) =>
+          workflow.priority === 'high' ? 3 : workflow.priority === 'medium' ? 2 : 1,
+        metadataExtractor: (workflow: Workflow) => ({ priority: workflow.priority }),
+      });
+
+      context.retrieval.index('component-usage', result.componentUsage, {
+        fingerprint: context.fingerprint,
+        idKey: 'tag',
+        tagExtractor: (usage: ComponentUsageSummary) => usage.patterns || [],
+        scoreExtractor: (usage: ComponentUsageSummary) => usage.pageCount,
+        metadataExtractor: (usage: ComponentUsageSummary) => ({
+          totalInstances: usage.totalInstances,
+        }),
+      });
+
+      context.memory.remember('WORKFLOW_DISCOVERY', 'latest-summary', {
+        pages: result.pages.length,
+        workflows: result.workflows.length,
+      }, {
+        scope: 'short',
+        ttlMs: 30 * 60 * 1000,
+        contextFingerprint: context.fingerprint,
+      });
+
       this.logger.info(`Workflow discovery complete:`);
       this.logger.info(`  - ${result.pages.length} pages discovered`);
       this.logger.info(`  - ${result.workflows.length} workflows identified`);
