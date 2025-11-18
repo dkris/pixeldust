@@ -1,5 +1,6 @@
 import { BaseAgent } from './base-agent';
 import { AgentType, AgentContext, AgentResult } from '../types';
+import { DatabaseManager } from '../storage/database';
 import { ContainerRuntimeManager } from '../utils/container-runtime';
 import Dockerode from 'dockerode';
 import path from 'path';
@@ -19,62 +20,64 @@ import { v4 as uuidv4 } from 'uuid';
 export class ApplicationLoaderAgent extends BaseAgent {
   private docker: Dockerode | null = null;
 
-  constructor() {
-    super(AgentType.APPLICATION_LOADER);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.APPLICATION_LOADER, db);
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session } = context;
+    return this.executeWithTracking(context, async () => {
+      const { config, session } = context;
 
-    if (!config.application) {
-      this.logger.info('No application configuration found, skipping application loading');
-      return this.success({ mode: 'framework-only' });
-    }
-
-    try {
-      this.logger.info('Loading application for testing');
-
-      // Initialize container runtime
-      const { client } = await ContainerRuntimeManager.configure(config.containers.runtime);
-      this.docker = client;
-
-      // Validate application path
-      await this.validateApplication(config.application);
-
-      // Create workspace for each version
-      const workspaces = await this.createWorkspaces(
-        config.application.path,
-        session.versions
-      );
-
-      // Build containers with application code
-      const containers = [];
-      for (const version of session.versions) {
-        const container = await this.buildApplicationContainer(
-          version,
-          workspaces[version],
-          config
-        );
-        containers.push(container);
+      if (!config.application) {
+        this.logger.info('No application configuration found, skipping application loading');
+        return this.success({ mode: 'framework-only' });
       }
 
-      // Wait for all application containers to be healthy and responding
-      await this.waitForApplicationsReady(containers);
+      try {
+        this.logger.info('Loading application for testing');
 
-      this.logger.info(`Successfully loaded application for ${containers.length} versions`);
+        // Initialize container runtime
+        const { client } = await ContainerRuntimeManager.configure(config.containers.runtime);
+        this.docker = client;
 
-      return this.success({
-        mode: 'application',
-        workspaces,
-        containers: containers.map(c => ({
-          version: c.version,
-          id: c.id,
-          url: c.url,
-        })),
-      });
-    } catch (error) {
-      return this.failure(error as Error);
-    }
+        // Validate application path
+        await this.validateApplication(config.application);
+
+        // Create workspace for each version
+        const workspaces = await this.createWorkspaces(
+          config.application.path,
+          session.versions
+        );
+
+        // Build containers with application code
+        const containers = [];
+        for (const version of session.versions) {
+          const container = await this.buildApplicationContainer(
+            version,
+            workspaces[version],
+            config
+          );
+          containers.push(container);
+        }
+
+        // Wait for all application containers to be healthy and responding
+        await this.waitForApplicationsReady(containers);
+
+        this.logger.info(`Successfully loaded application for ${containers.length} versions`);
+
+        return this.success({
+          mode: 'application',
+          workspaces,
+          containers: containers.map(c => ({
+            version: c.version,
+            id: c.id,
+            url: c.url,
+          })),
+        });
+      } catch (error) {
+        return this.failure(error as Error);
+      }
+    });
   }
 
   private async validateApplication(appConfig: any): Promise<void> {

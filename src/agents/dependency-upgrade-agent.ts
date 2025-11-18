@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 import { getRelatedPackages, getUpgradeStrategy, isReactFramework } from '../utils/framework-detector';
+import { DatabaseManager } from '../storage/database';
 
 const execAsync = promisify(exec);
 
@@ -38,144 +39,146 @@ interface UpgradeResult {
  * - Validate successful installation
  */
 export class DependencyUpgradeAgent extends BaseAgent {
-  constructor() {
-    super(AgentType.DEPENDENCY_UPGRADE);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.DEPENDENCY_UPGRADE, db);
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session, data } = context;
+    return this.executeWithTracking(context, async () => {
+      const { config, session, data } = context;
 
-    if (!config.application) {
-      this.logger.info('No application configuration, skipping dependency upgrade');
-      return this.success({ skipped: true });
-    }
-
-    const appPath = config.application.path;
-    const framework = config.framework.name;
-    const targetVersion = session.versions[session.versions.length - 1]; // Latest version
-
-    try {
-      this.logger.info(`Upgrading ${framework} to ${targetVersion} in ${appPath}`);
-
-      // 1. Read current package.json
-      const pkg = await this.readPackageJson(appPath);
-      const currentVersion = pkg.dependencies?.[framework] || pkg.devDependencies?.[framework];
-
-      if (!currentVersion) {
-        throw new Error(`Framework ${framework} not found in package.json dependencies`);
+      if (!config.application) {
+        this.logger.info('No application configuration, skipping dependency upgrade');
+        return this.success({ skipped: true });
       }
 
-      this.logger.info(`Current version: ${currentVersion}, target: ${targetVersion}`);
+      const appPath = config.application.path;
+      const framework = config.framework.name;
+      const targetVersion = session.versions[session.versions.length - 1]; // Latest version
 
-      // 2. Get related packages that should be upgraded together
-      const relatedPackages = getRelatedPackages(config.framework);
-      const upgradeStrategy = getUpgradeStrategy(config.framework);
-
-      this.logger.info(`Related packages to upgrade: ${relatedPackages.join(', ')}`);
-
-      // 3. Get peer dependencies for target version
-      const peerDeps = await this.resolvePeerDependencies(framework, targetVersion);
-
-      // 4. For React frameworks, ensure react-dom is upgraded to matching version
-      if (isReactFramework(config.framework) && framework === 'react') {
-        if (pkg.dependencies?.['react-dom'] || pkg.devDependencies?.['react-dom']) {
-          peerDeps['react-dom'] = targetVersion;
-          this.logger.info(`Adding react-dom@${targetVersion} to upgrade list`);
-        }
-      }
-
-      // 5. For React UI5, ensure base packages are compatible
-      if (config.framework.name === '@ui5/webcomponents-react') {
-        // ui5-webcomponents-react has specific peer dependency requirements
-        const ui5PeerDeps = await this.resolvePeerDependencies('@ui5/webcomponents-react', targetVersion);
-        Object.assign(peerDeps, ui5PeerDeps);
-      }
-
-      // 6. Detect conflicts
-      const conflicts = await this.detectConflicts(pkg, peerDeps);
-
-      if (conflicts.length > 0 && !config.upgrade?.resolveConflicts) {
-        return this.failure(
-          new Error(`Dependency conflicts detected: ${JSON.stringify(conflicts, null, 2)}`)
-        );
-      }
-
-      // 7. Get breaking changes
-      const breakingChanges = await this.getBreakingChanges(
-        framework,
-        currentVersion,
-        targetVersion
-      );
-
-      // 8. Backup package.json
-      await this.backupPackageJson(appPath);
-
-      // 9. Update package.json - main framework
-      if (pkg.dependencies?.[framework]) {
-        pkg.dependencies[framework] = targetVersion;
-      } else if (pkg.devDependencies?.[framework]) {
-        pkg.devDependencies[framework] = targetVersion;
-      }
-
-      // Update related packages to matching versions
-      for (const relatedPkg of relatedPackages) {
-        if (pkg.dependencies?.[relatedPkg]) {
-          pkg.dependencies[relatedPkg] = targetVersion;
-          this.logger.info(`Upgraded ${relatedPkg} to ${targetVersion}`);
-        } else if (pkg.devDependencies?.[relatedPkg]) {
-          pkg.devDependencies[relatedPkg] = targetVersion;
-          this.logger.info(`Upgraded ${relatedPkg} to ${targetVersion}`);
-        }
-      }
-
-      // Update peer dependencies
-      for (const [dep, version] of Object.entries(peerDeps)) {
-        if (pkg.dependencies?.[dep]) {
-          pkg.dependencies[dep] = version;
-        } else if (pkg.devDependencies?.[dep]) {
-          pkg.devDependencies[dep] = version;
-        } else if (config.upgrade?.updatePeerDependencies) {
-          pkg.dependencies = pkg.dependencies || {};
-          pkg.dependencies[dep] = version;
-        }
-      }
-
-      // Update TypeScript types for React if applicable
-      if (upgradeStrategy.upgradeTypes && isReactFramework(config.framework)) {
-        await this.upgradeReactTypes(pkg, targetVersion);
-      }
-
-      await this.writePackageJson(appPath, pkg);
-
-      // 10. Run npm install
-      let installSuccess = false;
       try {
-        await this.runNpmInstall(appPath);
-        installSuccess = true;
-        this.logger.info('npm install completed successfully');
+        this.logger.info(`Upgrading ${framework} to ${targetVersion} in ${appPath}`);
+
+        // 1. Read current package.json
+        const pkg = await this.readPackageJson(appPath);
+        const currentVersion = pkg.dependencies?.[framework] || pkg.devDependencies?.[framework];
+
+        if (!currentVersion) {
+          throw new Error(`Framework ${framework} not found in package.json dependencies`);
+        }
+
+        this.logger.info(`Current version: ${currentVersion}, target: ${targetVersion}`);
+
+        // 2. Get related packages that should be upgraded together
+        const relatedPackages = getRelatedPackages(config.framework);
+        const upgradeStrategy = getUpgradeStrategy(config.framework);
+
+        this.logger.info(`Related packages to upgrade: ${relatedPackages.join(', ')}`);
+
+        // 3. Get peer dependencies for target version
+        const peerDeps = await this.resolvePeerDependencies(framework, targetVersion);
+
+        // 4. For React frameworks, ensure react-dom is upgraded to matching version
+        if (isReactFramework(config.framework) && framework === 'react') {
+          if (pkg.dependencies?.['react-dom'] || pkg.devDependencies?.['react-dom']) {
+            peerDeps['react-dom'] = targetVersion;
+            this.logger.info(`Adding react-dom@${targetVersion} to upgrade list`);
+          }
+        }
+
+        // 5. For React UI5, ensure base packages are compatible
+        if (config.framework.name === '@ui5/webcomponents-react') {
+          // ui5-webcomponents-react has specific peer dependency requirements
+          const ui5PeerDeps = await this.resolvePeerDependencies('@ui5/webcomponents-react', targetVersion);
+          Object.assign(peerDeps, ui5PeerDeps);
+        }
+
+        // 6. Detect conflicts
+        const conflicts = await this.detectConflicts(pkg, peerDeps);
+
+        if (conflicts.length > 0 && !config.upgrade?.resolveConflicts) {
+          return this.failure(
+            new Error(`Dependency conflicts detected: ${JSON.stringify(conflicts, null, 2)}`)
+          );
+        }
+
+        // 7. Get breaking changes
+        const breakingChanges = await this.getBreakingChanges(
+          framework,
+          currentVersion,
+          targetVersion
+        );
+
+        // 8. Backup package.json
+        await this.backupPackageJson(appPath);
+
+        // 9. Update package.json - main framework
+        if (pkg.dependencies?.[framework]) {
+          pkg.dependencies[framework] = targetVersion;
+        } else if (pkg.devDependencies?.[framework]) {
+          pkg.devDependencies[framework] = targetVersion;
+        }
+
+        // Update related packages to matching versions
+        for (const relatedPkg of relatedPackages) {
+          if (pkg.dependencies?.[relatedPkg]) {
+            pkg.dependencies[relatedPkg] = targetVersion;
+            this.logger.info(`Upgraded ${relatedPkg} to ${targetVersion}`);
+          } else if (pkg.devDependencies?.[relatedPkg]) {
+            pkg.devDependencies[relatedPkg] = targetVersion;
+            this.logger.info(`Upgraded ${relatedPkg} to ${targetVersion}`);
+          }
+        }
+
+        // Update peer dependencies
+        for (const [dep, version] of Object.entries(peerDeps)) {
+          if (pkg.dependencies?.[dep]) {
+            pkg.dependencies[dep] = version;
+          } else if (pkg.devDependencies?.[dep]) {
+            pkg.devDependencies[dep] = version;
+          } else if (config.upgrade?.updatePeerDependencies) {
+            pkg.dependencies = pkg.dependencies || {};
+            pkg.dependencies[dep] = version;
+          }
+        }
+
+        // Update TypeScript types for React if applicable
+        if (upgradeStrategy.upgradeTypes && isReactFramework(config.framework)) {
+          await this.upgradeReactTypes(pkg, targetVersion);
+        }
+
+        await this.writePackageJson(appPath, pkg);
+
+        // 10. Run npm install
+        let installSuccess = false;
+        try {
+          await this.runNpmInstall(appPath);
+          installSuccess = true;
+          this.logger.info('npm install completed successfully');
+        } catch (error) {
+          this.logger.error('npm install failed', error as Error);
+          // Restore backup
+          await this.restorePackageJson(appPath);
+          throw error;
+        }
+
+        const result: UpgradeResult = {
+          upgraded: framework,
+          from: currentVersion,
+          to: targetVersion,
+          peerDepsUpdated: peerDeps,
+          conflicts,
+          breakingChanges,
+          installSuccess,
+        };
+
+        this.logger.info('Dependency upgrade completed', result);
+
+        return this.success(result);
       } catch (error) {
-        this.logger.error('npm install failed', error as Error);
-        // Restore backup
-        await this.restorePackageJson(appPath);
-        throw error;
+        return this.failure(error as Error);
       }
-
-      const result: UpgradeResult = {
-        upgraded: framework,
-        from: currentVersion,
-        to: targetVersion,
-        peerDepsUpdated: peerDeps,
-        conflicts,
-        breakingChanges,
-        installSuccess,
-      };
-
-      this.logger.info('Dependency upgrade completed', result);
-
-      return this.success(result);
-    } catch (error) {
-      return this.failure(error as Error);
-    }
+    });
   }
 
   private async readPackageJson(appPath: string): Promise<any> {

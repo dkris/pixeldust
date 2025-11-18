@@ -35,85 +35,87 @@ export class OrchestratorAgent extends BaseAgent {
   }
 
   private initializeAgents() {
-    this.agents.set(AgentType.APPLICATION_LOADER, new ApplicationLoaderAgent());
-    this.agents.set(AgentType.ENVIRONMENT, new EnvironmentAgent());
-    this.agents.set(AgentType.WORKFLOW_DISCOVERY, new WorkflowDiscoveryAgent());
-    this.agents.set(AgentType.TEST_GENERATION, new TestGenerationAgent());
-    this.agents.set(AgentType.EXECUTION, new ExecutionAgent());
-    this.agents.set(AgentType.ANALYSIS, new AnalysisAgent());
-    this.agents.set(AgentType.DEPENDENCY_UPGRADE, new DependencyUpgradeAgent());
-    this.agents.set(AgentType.TEST_FIXING, new TestFixingAgent());
-    this.agents.set(AgentType.REMEDIATION, new RemediationAgent());
-    this.agents.set(AgentType.IMPLEMENTATION, new ImplementationAgent());
-    this.agents.set(AgentType.REVIEW, new ReviewAgent());
+    this.agents.set(AgentType.APPLICATION_LOADER, new ApplicationLoaderAgent(this.database));
+    this.agents.set(AgentType.ENVIRONMENT, new EnvironmentAgent(this.database));
+    this.agents.set(AgentType.WORKFLOW_DISCOVERY, new WorkflowDiscoveryAgent(this.database));
+    this.agents.set(AgentType.TEST_GENERATION, new TestGenerationAgent(this.database));
+    this.agents.set(AgentType.EXECUTION, new ExecutionAgent(this.database));
+    this.agents.set(AgentType.ANALYSIS, new AnalysisAgent(this.database));
+    this.agents.set(AgentType.DEPENDENCY_UPGRADE, new DependencyUpgradeAgent(this.database));
+    this.agents.set(AgentType.TEST_FIXING, new TestFixingAgent(this.database));
+    this.agents.set(AgentType.REMEDIATION, new RemediationAgent(this.database));
+    this.agents.set(AgentType.IMPLEMENTATION, new ImplementationAgent(this.database));
+    this.agents.set(AgentType.REVIEW, new ReviewAgent(this.database));
     this.agents.set(AgentType.EVALUATION, new EvaluationAgent(this.database));
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { session } = context;
+    return this.executeWithTracking(context, async () => {
+      const { session } = context;
 
-    try {
-      this.logger.info(`Orchestrating session ${session.id} in state ${session.state}`);
+      try {
+        this.logger.info(`Orchestrating session ${session.id} in state ${session.state}`);
 
-      // State machine execution
-      switch (session.state) {
-        case SessionState.IDLE:
-          return this.handleIdle(context);
+        // State machine execution
+        switch (session.state) {
+          case SessionState.IDLE:
+            return this.handleIdle(context);
 
-        case SessionState.INITIALIZING:
-          return this.handleInitializing(context);
+          case SessionState.INITIALIZING:
+            return this.handleInitializing(context);
 
-        case SessionState.APPLICATION_LOADING:
-          return this.handleApplicationLoading(context);
+          case SessionState.APPLICATION_LOADING:
+            return this.handleApplicationLoading(context);
 
-        case SessionState.ENVIRONMENT_SETUP:
-          return this.handleEnvironmentSetup(context);
+          case SessionState.ENVIRONMENT_SETUP:
+            return this.handleEnvironmentSetup(context);
 
-        case SessionState.WORKFLOW_DISCOVERY:
-          return this.handleWorkflowDiscovery(context);
+          case SessionState.WORKFLOW_DISCOVERY:
+            return this.handleWorkflowDiscovery(context);
 
-        case SessionState.TEST_GENERATION:
-          return this.handleTestGeneration(context);
+          case SessionState.TEST_GENERATION:
+            return this.handleTestGeneration(context);
 
-        case SessionState.TEST_EXECUTION:
-          return this.handleTestExecution(context);
+          case SessionState.TEST_EXECUTION:
+            return this.handleTestExecution(context);
 
-        case SessionState.ANALYSIS:
-          return this.handleAnalysis(context);
+          case SessionState.ANALYSIS:
+            return this.handleAnalysis(context);
 
-        case SessionState.DEPENDENCY_UPGRADE:
-          return this.handleDependencyUpgrade(context);
+          case SessionState.DEPENDENCY_UPGRADE:
+            return this.handleDependencyUpgrade(context);
 
-        case SessionState.TEST_FIXING:
-          return this.handleTestFixing(context);
+          case SessionState.TEST_FIXING:
+            return this.handleTestFixing(context);
 
-        case SessionState.REMEDIATION_PROPOSAL:
-          return this.handleRemediationProposal(context);
+          case SessionState.REMEDIATION_PROPOSAL:
+            return this.handleRemediationProposal(context);
 
-        case SessionState.AWAITING_APPROVAL:
-          return this.handleAwaitingApproval(context);
+          case SessionState.AWAITING_APPROVAL:
+            return this.handleAwaitingApproval(context);
 
-        case SessionState.IMPLEMENTING:
-          return this.handleImplementing(context);
+          case SessionState.IMPLEMENTING:
+            return this.handleImplementing(context);
 
-        case SessionState.REVIEWING:
-          return this.handleReviewing(context);
+          case SessionState.REVIEWING:
+            return this.handleReviewing(context);
 
-        case SessionState.EVALUATION:
-          return this.handleEvaluation(context);
+          case SessionState.EVALUATION:
+            return this.handleEvaluation(context);
 
-        case SessionState.COMPLETE:
-          return this.handleComplete(context);
+          case SessionState.COMPLETE:
+            return this.handleComplete(context);
 
-        case SessionState.ERROR:
-          return this.handleError(context);
+          case SessionState.ERROR:
+            return this.handleError(context);
 
-        default:
-          throw new Error(`Unknown state: ${session.state}`);
+          default:
+            throw new Error(`Unknown state: ${session.state}`);
+        }
+      } catch (error) {
+        return this.handleException(context, error as Error);
       }
-    } catch (error) {
-      return this.handleException(context, error as Error);
-    }
+    });
   }
 
   private async handleIdle(context: AgentContext): Promise<AgentResult> {

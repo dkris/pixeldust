@@ -4,6 +4,7 @@ import { chromium, firefox, webkit, Browser, Page } from 'playwright';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs/promises';
+import { DatabaseManager } from '../storage/database';
 
 /**
  * Execution Agent - Runs tests and collects data
@@ -16,47 +17,49 @@ import fs from 'fs/promises';
  * - Parallel execution
  */
 export class ExecutionAgent extends BaseAgent {
-  constructor() {
-    super(AgentType.EXECUTION);
+  constructor(db?: DatabaseManager) {
+    super(AgentType.EXECUTION, db);
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { config, session, data } = context;
-    const testSuites = data?.testSuites || [];
+    return this.executeWithTracking(context, async () => {
+      const { config, session, data } = context;
+      const testSuites = data?.testSuites || [];
 
-    try {
-      this.logger.info(`Executing tests across ${session.versions.length} versions`);
-      this.logger.debug(`Received containers data:`, data?.containers);
-      this.logger.debug(`Received test suites: ${testSuites.length}`);
+      try {
+        this.logger.info(`Executing tests across ${session.versions.length} versions`);
+        this.logger.debug(`Received containers data:`, data?.containers);
+        this.logger.debug(`Received test suites: ${testSuites.length}`);
 
-      const allResults: TestResult[] = [];
+        const allResults: TestResult[] = [];
 
-      // Execute tests for each version
-      for (const version of session.versions) {
-        this.logger.info(`Running tests for version ${version}`);
+        // Execute tests for each version
+        for (const version of session.versions) {
+          this.logger.info(`Running tests for version ${version}`);
 
-        const versionResults = await this.runTestsForVersion(
-          version,
-          testSuites,
-          config,
-          session.id,
-          data?.containers || []
-        );
+          const versionResults = await this.runTestsForVersion(
+            version,
+            testSuites,
+            config,
+            session.id,
+            data?.containers || []
+          );
 
-        allResults.push(...versionResults);
+          allResults.push(...versionResults);
+        }
+
+        this.logger.info(`Executed ${allResults.length} tests`);
+
+        return this.success({
+          results: allResults,
+          passed: allResults.filter(r => r.status === 'passed').length,
+          failed: allResults.filter(r => r.status === 'failed').length,
+          skipped: allResults.filter(r => r.status === 'skipped').length,
+        });
+      } catch (error) {
+        return this.failure(error as Error);
       }
-
-      this.logger.info(`Executed ${allResults.length} tests`);
-
-      return this.success({
-        results: allResults,
-        passed: allResults.filter(r => r.status === 'passed').length,
-        failed: allResults.filter(r => r.status === 'failed').length,
-        skipped: allResults.filter(r => r.status === 'skipped').length,
-      });
-    } catch (error) {
-      return this.failure(error as Error);
-    }
+    });
   }
 
   private async runTestsForVersion(

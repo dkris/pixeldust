@@ -43,59 +43,61 @@ export class EvaluationAgent extends BaseAgent {
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
-    const { session, config } = context;
+    return this.executeWithTracking(context, async () => {
+      const { session, config } = context;
 
-    try {
-      this.logger.info('Starting evaluation and analysis');
+      try {
+        this.logger.info('Starting evaluation and analysis');
 
-      // Collect metrics from all phases
-      const testQuality = await this.evaluateTestQuality(session.id);
-      const comparisonQuality = await this.evaluateComparisonQuality(session.id);
-      const remediationEffectiveness = await this.evaluateRemediationEffectiveness(session.id);
+        // Collect metrics from all phases
+        const testQuality = await this.evaluateTestQuality(session.id);
+        const comparisonQuality = await this.evaluateComparisonQuality(session.id);
+        const remediationEffectiveness = await this.evaluateRemediationEffectiveness(session.id);
 
-      // Calculate overall score
-      const overallScore = this.calculateOverallScore(
-        testQuality,
-        comparisonQuality,
-        remediationEffectiveness
-      );
+        // Calculate overall score
+        const overallScore = this.calculateOverallScore(
+          testQuality,
+          comparisonQuality,
+          remediationEffectiveness
+        );
 
-      const metrics: EvaluationMetrics = {
-        testQuality,
-        comparisonQuality,
-        remediationEffectiveness,
-        overallScore,
-      };
+        const metrics: EvaluationMetrics = {
+          testQuality,
+          comparisonQuality,
+          remediationEffectiveness,
+          overallScore,
+        };
 
-      // Generate AI-powered feedback and recommendations
-      const feedback = await this.generateFeedback(metrics, session.id, config);
+        // Generate AI-powered feedback and recommendations
+        const feedback = await this.generateFeedback(metrics, session.id, config);
 
-      // Create evaluation record
-      const evaluation: Evaluation = {
-        id: uuidv4(),
-        sessionId: session.id,
-        agentType: AgentType.EVALUATION,
-        metrics,
-        feedback,
-        timestamp: new Date(),
-      };
+        // Create evaluation record
+        const evaluation: Evaluation = {
+          id: uuidv4(),
+          sessionId: session.id,
+          agentType: AgentType.EVALUATION,
+          metrics,
+          feedback,
+          timestamp: new Date(),
+        };
 
-      // Save to database for historical learning
-      this.database.saveEvaluation(evaluation);
+        // Save to database for historical learning
+        this.database.saveEvaluation(evaluation);
 
-      this.logger.info(`Evaluation complete. Overall score: ${overallScore.toFixed(2)}/100`);
-      this.logger.info(`Generated ${feedback.recommendations.length} recommendations`);
+        this.logger.info(`Evaluation complete. Overall score: ${overallScore.toFixed(2)}/100`);
+        this.logger.info(`Generated ${feedback.recommendations.length} recommendations`);
 
-      return this.success(
-        {
-          evaluation,
-          improvements: feedback.recommendations.filter(r => r.actionable),
-        },
-        SessionState.COMPLETE
-      );
-    } catch (error) {
-      return this.failure(error as Error, SessionState.ERROR);
-    }
+        return this.success(
+          {
+            evaluation,
+            improvements: feedback.recommendations.filter(r => r.actionable),
+          },
+          SessionState.COMPLETE
+        );
+      } catch (error) {
+        return this.failure(error as Error, SessionState.ERROR);
+      }
+    });
   }
 
   /**
