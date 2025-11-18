@@ -25,10 +25,11 @@ export class ExecutionAgent extends BaseAgent {
     return this.executeWithTracking(context, async () => {
       const { config, session, data } = context;
       const testSuites = data?.testSuites || [];
+      const containers = this.resolveContainers(data);
 
       try {
         this.logger.info(`Executing tests across ${session.versions.length} versions`);
-        this.logger.debug(`Received containers data:`, data?.containers);
+        this.logger.debug(`Resolved containers data:`, containers);
         this.logger.debug(`Received test suites: ${testSuites.length}`);
 
         const allResults: TestResult[] = [];
@@ -42,7 +43,7 @@ export class ExecutionAgent extends BaseAgent {
             testSuites,
             config,
             session.id,
-            data?.containers || []
+            containers
           );
 
           allResults.push(...versionResults);
@@ -487,6 +488,38 @@ export class ExecutionAgent extends BaseAgent {
       this.logger.warn('Failed to collect metrics', error as Error);
       return null;
     }
+  }
+
+  private resolveContainers(data?: Record<string, any>): any[] {
+    if (!data) {
+      return [];
+    }
+
+    const directContainers = (data as any).containers;
+    if (Array.isArray(directContainers)) {
+      return directContainers;
+    }
+
+    const preferredSources = [
+      AgentType.ENVIRONMENT,
+      AgentType.APPLICATION_LOADER,
+      AgentType.WORKFLOW_DISCOVERY,
+    ];
+
+    for (const key of preferredSources) {
+      const source = (data as Record<string, any>)[key];
+      if (source && Array.isArray(source.containers)) {
+        return source.containers;
+      }
+    }
+
+    for (const value of Object.values(data)) {
+      if (value && typeof value === 'object' && Array.isArray((value as any).containers)) {
+        return (value as any).containers;
+      }
+    }
+
+    return [];
   }
 }
 
