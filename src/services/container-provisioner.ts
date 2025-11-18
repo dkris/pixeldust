@@ -140,9 +140,7 @@ export class ContainerProvisioner {
       if (!tracked) continue;
 
       try {
-        if (!tracked.autoRemove) {
-          await tracked.container.stop({ t: 5 });
-        }
+        await tracked.container.stop({ t: 5 });
         this.logger.info(`Container ${tracked.name} stopped`);
       } catch (error) {
         this.logger.warn(`Failed to stop container ${tracked.name}`, error as Error);
