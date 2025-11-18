@@ -58,66 +58,41 @@ PixelDust demonstrates strong architectural foundations with a well-designed mul
    - Allow agents to propose alternative strategies
    - Implement reflection and self-correction
 
-### 1.2 Context Management ⭐⭐⭐☆☆ (3/5)
+### 1.2 Context Management ⭐⭐⭐⭐☆ (4/5)
 
 **Current Approach**:
 ```typescript
 interface AgentContext {
   session: Session;
   config: Config;
-  data?: any;  // ⚠️ Untyped, grows unbounded
+  data?: Record<string, any>;
+  layers: LayeredContextManager;   // persistent/shared/ephemeral
+  retrieval: RetrievalService;     // declarative context API
+  memory: AgentMemory;             // prompt hints + short term cache
+  fingerprint: string;             // context version hash
+  pruneLayers: (layers?: ContextLayerType[]) => void;
 }
 ```
 
-**Issues**:
-- Context grows indefinitely as data accumulates
-- No context pruning or summarization
-- Difficult to trace data provenance
-- No versioning or snapshots
+**Highlights**:
+- `StageContext` constructs immutable layered contexts and prunes ephemeral data after each stage.
+- Retrieval service indexes workflow artifacts so downstream agents request only the slices they need.
+- Events carry `contextFingerprint` and `contextVersion`, making provenance inspection trivial.
 
-**Recommendations**:
+**Remaining Gaps**:
+- Need persisted context snapshots for long-running sessions beyond in-memory manager.
+- Context repair notes exist, but no automated summarizer consumes them yet.
 
-1. **Implement Context Layers**
-```typescript
-interface AgentContext {
-  session: Session;
-  config: Config;
-  persistent: PersistentContext;  // Saved to DB
-  ephemeral: EphemeralContext;    // Cleared after use
-  shared: SharedContext;          // Shared between agents
-}
-```
-
-2. **Add Context Pruning**
-   - Automatic cleanup of old/unused data
-   - Summarization of large datasets
-   - Context compression for long sessions
-
-3. **Implement Context Versioning**
-   - Track context changes over time
-   - Enable rollback to previous states
-   - Support debugging and replay
-
-### 1.3 Error Handling & Resilience ⭐⭐⭐☆☆ (3/5)
+### 1.3 Error Handling & Resilience ⭐⭐⭐⭐☆ (4/5)
 
 **Current State**:
-- Basic try-catch in agent execute methods
-- Errors bubble up to orchestrator
-- Limited retry logic
-- No circuit breakers
+- `ResilienceManager` enforces retry policies per agent with exponential backoff.
+- Circuit breakers protect flaky resources (e.g., browsers) and emit repair notes when tripped.
+- AgentStageAdapter routes all executions through the resilience layer and emits enriched failure telemetry.
 
-**Recommendations**:
-
-1. **Implement Retry Strategies**
-```typescript
-interface RetryPolicy {
-  maxAttempts: number;
-  backoff: 'exponential' | 'linear' | 'fixed';
-  retryableErrors: ErrorType[];
-}
-```
-
-2. **Add Circuit Breakers**
+**Next Steps**:
+- Surface breaker status in CLI dashboards.
+- Allow agents to propose degraded fallback behaviors when breakers open for extended periods.
    - Prevent cascade failures
    - Fail fast when services are down
    - Automatic recovery detection

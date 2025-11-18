@@ -383,17 +383,17 @@ Relevant Workflows:
 - Automatic cache invalidation (30 days or major version change)
 - **10x faster** test generation on cached runs
 
-**Agent Memory System:**
-- Agents learn from past sessions
-- Remember component quality and failure patterns
-- Cross-session context retention
-- Prioritize problematic components automatically
+**Layered Context & Memory System:**
+- Immutable stage contexts now manage **persistent / shared / ephemeral** layers
+- Built-in retrieval service lets agents request only the slices they need
+- Agents learn from past sessions and receive prompt hints from evaluation memories
+- Automatic context fingerprints tag every event for traceability
 
-**Enhanced Observability:**
-- Track token usage per agent
-- Performance metrics (duration, success rate)
-- Cost attribution and analytics
-- Full visibility into system behavior
+**Enhanced Observability & Resilience:**
+- Track token usage per agent with context fingerprints
+- Performance metrics (duration, success rate) emitted per stage
+- Cost attribution and analytics stay tied to context versions
+- Built-in retry + circuit-breaker policies with automatic context repair notes
 
 **Optimized Prompts:**
 - 40-60% reduction in context size

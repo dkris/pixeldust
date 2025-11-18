@@ -139,16 +139,17 @@ export class AgentStageAdapter extends BasePipelineStage {
       });
 
       // Prepare agent context from stage context
-      const agentContext: AgentContext = {
-        session: context.session,
-        config: context.config,
-        data: this.inputDataKey
-          ? { [this.inputDataKey]: context.get(this.inputDataKey) }
-          : context.toObject(),
-      };
+      const agentData = this.inputDataKey
+        ? { [this.inputDataKey]: context.get(this.inputDataKey) }
+        : context.toObject();
+
+      const agentContext = context.createAgentContext(agentData);
 
       // Execute agent
-      const result = await this.agent.execute(agentContext);
+      const result = await context.resilience.execute(
+        this.agent.type,
+        () => this.agent.execute(agentContext)
+      );
 
       const duration = Date.now() - startTime;
 
@@ -189,6 +190,13 @@ export class AgentStageAdapter extends BasePipelineStage {
         stageName: this.name,
         agentType: this.agent.type,
       });
+
+      if ((error as Error).message.includes('Circuit open')) {
+        context.layers.recordRepairNote('Circuit breaker triggered', {
+          agentType: this.agent.type,
+          stage: this.name,
+        });
+      }
 
       return this.failure(error as Error, { duration });
     }

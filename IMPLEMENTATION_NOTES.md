@@ -6,12 +6,14 @@
 
 ## Executive Summary
 
-This document captures significant performance and architecture improvements implemented in PixelDust, focusing on four key areas:
+This document captures significant performance and architecture improvements implemented in PixelDust, focusing on six key areas:
 
 1. **Test Caching System** - 80-95% reduction in token usage for repeated test runs
 2. **Agent Memory Layer** - Cross-session learning and context retention
 3. **Enhanced Observability** - Comprehensive performance tracking and metrics
 4. **Prompt Optimization** - 40-60% reduction in context size per API call
+5. **Layered Context Surfaces & Retrieval APIs** - Declarative context access with versioned fingerprints
+6. **Runtime Resilience & Context Repair** - Retry/circuit breakers plus automatic repair notes
 
 **Expected Impact:**
 - Token cost reduction: 85-90% for repeated sessions
@@ -438,6 +440,46 @@ Focus on core functionality for version testing. Generate 6-8 tests.
 **For 20 Components:**
 - Savings: 9,200 tokens
 - Cost reduction: ~$0.03-0.05 per session
+
+---
+
+## 5. Layered Context Surfaces & Retrieval APIs
+
+### Problem Statement
+Stage and agent contexts previously relied on an untyped `data` bag that grew forever, making it impossible to trace provenance or trim unused artifacts.
+
+### Solution Implemented
+
+- `StageContext` now ships with a [`LayeredContextManager`](src/core/context-manager.ts) that separates **persistent**, **shared**, and **ephemeral** data stores.
+- Every event emitted by `StageContext` includes a `contextFingerprint` + `contextVersion`, allowing downstream analysis tools to correlate failures with the exact context snapshot.
+- Agents consume a shared [`RetrievalService`](src/services/retrieval-service.ts), enabling declarative queries such as "give me the top workflows tagged with `ui5-button`" instead of shipping entire arrays through prompts.
+- Workflow discovery populates both the layered context and retrieval indexes so that test generation can request surgically precise slices.【F:src/agents/workflow-discovery-agent.ts†L65-L138】
+
+### Impact
+
+- Prevents unbounded context growth by pruning ephemeral layers after each stage.
+- Makes workflow artifacts reusable by any agent without bespoke plumbing.
+- Provides the foundation for future "context as data product" tooling.
+
+---
+
+## 6. Runtime Resilience & Context Repair
+
+### Problem Statement
+Agent failures cascaded through the orchestrator because retries and circuit breakers were handled ad hoc (if at all).
+
+### Solution Implemented
+
+- Added a centralized [`ResilienceManager`](src/core/resilience.ts) that enforces per-agent retry policies and circuit breakers.
+- `AgentStageAdapter` routes every agent execution through the resilience manager and records context repair notes when a circuit trips.【F:src/core/agent-stage-adapter.ts†L120-L189】
+- Stage contexts expose `context.pruneLayers()` so every stage cleans up ephemeral artifacts automatically.【F:src/core/pipeline.ts†L5-L220】
+- Memory service listens to evaluation events and injects prompt hints, keeping remediation feedback actionable without manual wiring.【F:src/services/agent-memory.ts†L1-L78】
+
+### Impact
+
+- Repeated browser or container failures no longer take down the pipeline—agents are retried with exponential backoff before raising fatal errors.
+- Operators receive explicit repair notes highlighting which context bundle requires summarization.
+- Prompts automatically absorb evaluation feedback, reducing the number of cycles required to converge on stable tests.
 
 ---
 
