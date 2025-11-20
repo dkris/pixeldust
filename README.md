@@ -1022,6 +1022,111 @@ We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
 - Adding new agents
 - Testing guidelines
 
+## Troubleshooting
+
+### Common Issues
+
+#### Native Module Version Mismatch (`better-sqlite3`)
+
+**Error:**
+```
+The module '/path/to/better_sqlite3.node' was compiled against a different Node.js version using NODE_MODULE_VERSION XXX
+```
+
+**Cause:** The `better-sqlite3` native module was compiled for a different Node.js version than currently running.
+
+**Solution:**
+```bash
+# Rebuild the native module for your current Node.js version
+npm rebuild better-sqlite3
+
+# Or reinstall all dependencies
+rm -rf node_modules package-lock.json
+npm install
+```
+
+**Prevention:** After switching Node.js versions (e.g., via nvm), always rebuild native modules:
+```bash
+nvm use 22
+npm rebuild
+```
+
+#### Playwright Browsers Not Installed
+
+**Error:**
+```
+Executable doesn't exist at /path/to/chromium
+```
+
+**Solution:**
+```bash
+npx playwright install chromium
+# Or install all browsers
+npx playwright install
+```
+
+#### Missing API Key
+
+**Error:**
+```
+Missing API key
+```
+
+**Solution:**
+```bash
+# For Anthropic (recommended)
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# For OpenAI
+export OPENAI_API_KEY="sk-..."
+```
+
+#### Container Runtime Issues
+
+**Docker not running:**
+```bash
+# Start Docker Desktop
+# Or on Linux:
+sudo systemctl start docker
+```
+
+**Podman socket not available:**
+```bash
+# Enable Podman socket
+systemctl --user enable --now podman.socket
+
+# Verify it's running
+podman info
+```
+
+See [PODMAN.md](./PODMAN.md) for detailed Podman setup instructions.
+
+#### Zero Tests Generated
+
+**Symptoms:** Test generation completes but reports 0 tests generated.
+
+**Common Causes:**
+1. Empty component configuration with no application path
+2. AI service errors (check API key)
+3. Workflow discovery failures in application mode
+
+**Solution:**
+```bash
+# Check logs for errors
+DEBUG=* pixeldust test
+
+# Verify configuration
+cat .pixeldustrc.json
+
+# For framework-only mode, ensure default components are used
+# Or explicitly specify components:
+{
+  "components": {
+    "include": ["ui5-button", "ui5-input", "ui5-card"]
+  }
+}
+```
+
 ## License
 
 MIT License - see [LICENSE](./LICENSE)
