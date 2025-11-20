@@ -63,7 +63,19 @@ describe('ExecutionAgent', () => {
       },
     ];
 
-    const stageContext = baseContext.with(AgentType.TEST_GENERATION, { testSuites });
+    // Add containers data for the test
+    const containers = [
+      {
+        version: '1.0.0',
+        url: 'http://localhost:3000',
+        port: 3000,
+        id: 'container-1.0.0',
+      },
+    ];
+
+    const stageContext = baseContext
+      .with(AgentType.TEST_GENERATION, { testSuites })
+      .with(AgentType.ENVIRONMENT, { containers });
     const agentContext = stageContext.createAgentContext(stageContext.toObject());
 
     const agent = new ExecutionAgent();

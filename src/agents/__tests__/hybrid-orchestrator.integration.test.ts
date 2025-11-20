@@ -1,4 +1,3 @@
-import { HybridOrchestratorAgent } from '../hybrid-orchestrator-agent';
 import type { DatabaseManager } from '../../storage/database';
 import {
   AgentContext,
@@ -11,9 +10,10 @@ import { EventType } from '../../core/event-bus';
 
 type AgentConstructor = new (...args: any[]) => any;
 
-function createMockAgent(agentType: AgentType): AgentConstructor {
-  const { BaseAgent } = jest.requireActual('../base-agent');
+// Import BaseAgent before defining the mock function
+import { BaseAgent } from '../base-agent';
 
+function createMockAgent(agentType: AgentType): AgentConstructor {
   return class extends BaseAgent {
     constructor(...args: any[]) {
       super(agentType, args[0]);
@@ -75,6 +75,9 @@ jest.mock('../review-agent', () => ({
 jest.mock('../evaluation-agent', () => ({
   EvaluationAgent: createMockAgent(AgentType.EVALUATION),
 }));
+
+// Import after all mocks are defined
+import { HybridOrchestratorAgent } from '../hybrid-orchestrator-agent';
 
 const mockDb = {
   updateSessionState: jest.fn(),
