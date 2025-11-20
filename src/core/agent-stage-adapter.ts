@@ -177,14 +177,18 @@ export class AgentStageAdapter extends BasePipelineStage {
         );
       }
 
-      // Emit completed event
-      context.emit(this.eventMap.completed, {
-        duration,
-        ...result.data,
-      }, {
-        stageName: this.name,
-        agentType: this.agent.type,
-      });
+      // Emit agent-specific completed event (only if different from generic STAGE_COMPLETED)
+      // The PipelineExecutor will emit STAGE_COMPLETED for all stages, so we only emit
+      // agent-specific events here to avoid duplication
+      if (this.eventMap.completed !== EventType.STAGE_COMPLETED) {
+        context.emit(this.eventMap.completed, {
+          duration,
+          ...result.data,
+        }, {
+          stageName: this.name,
+          agentType: this.agent.type,
+        });
+      }
 
       return this.success(result.data, { duration });
     } catch (error) {
