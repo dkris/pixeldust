@@ -14,6 +14,7 @@ export interface WorkflowDiscoveryBrowserClient {
   getDomSnapshot(): Promise<string>;
   captureScreenshot(): Promise<string | undefined>;
   getConsoleLogs(): Promise<string[]>;
+  getPage(): Promise<PlaywrightPage | null>;
 }
 
 export interface LocalPlaywrightClientOptions {
@@ -288,6 +289,10 @@ export class LocalPlaywrightClient implements WorkflowDiscoveryBrowserClient {
   async getConsoleLogs(): Promise<string[]> {
     return [...this.consoleLogs];
   }
+
+  async getPage(): Promise<PlaywrightPage | null> {
+    return this.page;
+  }
 }
 
 export class McpPlaywrightClient implements WorkflowDiscoveryBrowserClient {
@@ -397,6 +402,11 @@ export class McpPlaywrightClient implements WorkflowDiscoveryBrowserClient {
   async getConsoleLogs(): Promise<string[]> {
     const result = await this.callToolPayload<{ logs?: string[] }>(this.toolNames.console, {});
     return result?.logs || [];
+  }
+
+  async getPage(): Promise<PlaywrightPage | null> {
+    // MCP client doesn't provide direct page access
+    return null;
   }
 
   private async requestTool(name: string, args?: Record<string, any>): Promise<McpToolResponse> {

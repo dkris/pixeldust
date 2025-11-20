@@ -461,6 +461,8 @@ export class TestGenerationAgent extends BaseAgent {
     if (isApplicationMode) {
       // Build optimized workflow context if available (reduced token usage)
       let workflowContext = '';
+      let accessibilityContext = '';
+
       if (workflowData) {
         const componentUsage = workflowData.componentUsage?.find((u: any) => u.tag === component);
         const relevantWorkflows = workflowData.workflows?.filter((w: any) =>
@@ -487,6 +489,9 @@ export class TestGenerationAgent extends BaseAgent {
             workflowContext += `\n- Pages: `;
             const topPages = relevantPages.slice(0, 2);
             workflowContext += topPages.map((p: any) => `${p.url}`).join(', ');
+
+            // Extract accessibility context from pages
+            accessibilityContext = this.buildAccessibilityContext(relevantPages, component);
           }
 
           // Only include highest priority workflow
@@ -498,7 +503,7 @@ export class TestGenerationAgent extends BaseAgent {
       }
 
       // Application-aware test generation with optimized prompt
-      prompt = `Generate tests for "${component}" in application context.${workflowContext}
+      prompt = `Generate tests for "${component}" in application context.${workflowContext}${accessibilityContext}
 
 Categories (balanced):
 1. Visual (40%): Rendering, layout
@@ -506,19 +511,26 @@ Categories (balanced):
 3. Functional (20%): User interactions, workflows
 4. Performance (10%): Load time, responsiveness, speed
 
+SELECTOR STRATEGY (priority order):
+1. Semantic role-based: page.getByRole('button', { name: 'Submit' })
+2. Label-based: page.getByLabel('Email Address')
+3. Text-based: page.getByText('Welcome')
+4. Test ID: page.getByTestId('submit-btn')
+5. CSS selector (last resort): page.locator('#submit-btn')
+
 For Accessibility tests:
-- Use semantic selectors based on roles and labels (e.g., page.getByRole('button', { name: 'Submit' }))
-- Verify ARIA attributes (aria-label, aria-describedby, role)
+- ALWAYS use semantic selectors from the accessibility context above
+- Verify ARIA attributes match the discovered structure
 - Test keyboard navigation (Tab, Enter, Space, Arrow keys)
 - Check focus management and visual focus indicators
 - Validate heading hierarchy and landmark regions
-- Test with accessibility tree snapshot validation
+- Test state changes (aria-pressed, aria-checked, aria-expanded)
 
 Each test needs:
 - Name (kebab-case, e.g., "${component}-form-submit")
 - Description (what it tests)
 - Category (one of four above)
-- Playwright code (navigate to real pages)
+- Playwright code using semantic selectors (navigate to real pages)
 
 Generate 6-8 tests for application workflows.`;
     } else {
@@ -531,8 +543,15 @@ Categories (balanced, at least one each):
 3. Functional (20%): User interactions, workflows
 4. Performance (10%): Load time, responsiveness, speed
 
+SELECTOR STRATEGY (priority order):
+1. Semantic role-based: page.getByRole('button', { name: 'Submit' })
+2. Label-based: page.getByLabel('Email Address')
+3. Text-based: page.getByText('Welcome')
+4. Test ID: page.getByTestId('submit-btn')
+5. CSS selector (last resort): page.locator('${component}')
+
 For Accessibility tests:
-- Use semantic selectors: page.getByRole(), page.getByLabel(), page.getByText()
+- ALWAYS prefer semantic selectors over CSS selectors
 - Verify ARIA roles and properties (role, aria-label, aria-describedby, aria-expanded, etc.)
 - Test keyboard interactions (Tab, Enter, Space, Arrow keys for composite widgets)
 - Validate focus order and focus visibility
@@ -544,7 +563,7 @@ Each test:
 - Name (kebab-case with component)
 - Description
 - Category
-- Playwright code
+- Playwright code using semantic selectors
 
 Focus on core functionality for version testing. Generate 6-8 tests.`;
     }
@@ -694,7 +713,8 @@ Focus on core functionality for version testing. Generate 6-8 tests.`;
 
 test('${component} renders correctly', async ({ page }) => {
   await page.goto('/');
-  const element = await page.locator('${component}');
+  // Try semantic selector first, fallback to component tag
+  const element = await page.locator('${component}').first();
   await expect(element).toBeVisible();
 });`;
   }
@@ -703,33 +723,55 @@ test('${component} renders correctly', async ({ page }) => {
     return [
       {
         id: uuidv4(),
-        name: `${component} renders correctly`,
-        description: 'Basic rendering test',
+        name: `${component}-renders`,
+        description: 'Verifies component renders correctly',
         category: TestCategory.FUNCTIONAL,
-        code: `
-import { test, expect } from '@playwright/test';
+        code: `import { test, expect } from '@playwright/test';
 
 test('${component} renders correctly', async ({ page }) => {
   await page.goto('/');
-  const element = await page.locator('${component}');
+  // Prefer semantic selector when available
+  const element = await page.locator('${component}').first();
   await expect(element).toBeVisible();
-});
-`,
+});`,
       },
       {
         id: uuidv4(),
-        name: `${component} visual snapshot`,
-        description: 'Capture visual snapshot',
+        name: `${component}-visual-snapshot`,
+        description: 'Captures visual snapshot for regression testing',
         category: TestCategory.VISUAL,
-        code: `
-import { test, expect } from '@playwright/test';
+        code: `import { test, expect } from '@playwright/test';
 
 test('${component} visual snapshot', async ({ page }) => {
   await page.goto('/');
-  const element = await page.locator('${component}');
+  const element = await page.locator('${component}').first();
   await expect(element).toHaveScreenshot('${component}.png');
-});
-`,
+});`,
+      },
+      {
+        id: uuidv4(),
+        name: `${component}-accessibility`,
+        description: 'Validates accessibility attributes and ARIA roles',
+        category: TestCategory.ACCESSIBILITY,
+        code: `import { test, expect } from '@playwright/test';
+
+test('${component} accessibility validation', async ({ page }) => {
+  await page.goto('/');
+
+  // Find element by component tag
+  const element = await page.locator('${component}').first();
+  await expect(element).toBeVisible();
+
+  // Verify element has accessible role
+  const role = await element.getAttribute('role');
+  expect(role).toBeTruthy();
+
+  // Verify keyboard accessibility (if interactive)
+  if (role === 'button' || role === 'link') {
+    await element.focus();
+    await expect(element).toBeFocused();
+  }
+});`,
       },
     ];
   }
@@ -779,6 +821,83 @@ test('${component} visual snapshot', async ({ page }) => {
     }
 
     return null;
+  }
+
+  /**
+   * Build accessibility context from discovered pages
+   * Extracts semantic information about interactive elements
+   */
+  private buildAccessibilityContext(pages: Page[], component: string): string {
+    let context = '';
+
+    // Collect interactive elements with semantic information
+    const semanticElements: Array<{
+      role?: string;
+      name?: string;
+      text?: string;
+      type: string;
+    }> = [];
+
+    for (const page of pages) {
+      // Get interactive elements related to this component
+      const componentElements = page.interactiveElements.filter(
+        el => el.componentTag === component
+      );
+
+      for (const element of componentElements) {
+        if (element.role || element.accessibleName) {
+          semanticElements.push({
+            role: element.role,
+            name: element.accessibleName,
+            text: element.text,
+            type: element.type,
+          });
+        }
+      }
+
+      // Also extract from accessibility tree if available
+      if (page.accessibilityTree) {
+        const collector = new (require('../services/accessibility/snapshot-collector').AccessibilitySnapshotCollector)();
+        const simplifiedTree = collector.getSimplifiedTree(page.accessibilityTree);
+
+        // Look for nodes related to the component
+        const componentNodes = simplifiedTree
+          .split('\n')
+          .filter((line: string) => line.toLowerCase().includes(component.replace('-', ' ')))
+          .slice(0, 3); // Limit to top 3 matches
+
+        if (componentNodes.length > 0) {
+          if (!context) {
+            context = '\n\nACCESSIBILITY CONTEXT:';
+          }
+          context += '\nDiscovered elements in application:';
+          componentNodes.forEach((node: string) => {
+            context += `\n  ${node.trim()}`;
+          });
+        }
+      }
+    }
+
+    // Add semantic element examples
+    if (semanticElements.length > 0) {
+      if (!context) {
+        context = '\n\nACCESSIBILITY CONTEXT:';
+      }
+      context += '\nInteractive elements found:';
+
+      const uniqueElements = semanticElements.slice(0, 5); // Limit to 5 examples
+      uniqueElements.forEach(el => {
+        if (el.role && el.name) {
+          context += `\n  - ${el.type}: role="${el.role}" name="${el.name}"`;
+          context += `\n    Selector: page.getByRole('${el.role}', { name: '${el.name}' })`;
+        } else if (el.role) {
+          context += `\n  - ${el.type}: role="${el.role}"`;
+          context += `\n    Selector: page.getByRole('${el.role}')`;
+        }
+      });
+    }
+
+    return context;
   }
 }
 

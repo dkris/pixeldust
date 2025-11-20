@@ -16,6 +16,7 @@ type MockBrowserClient = WorkflowDiscoveryBrowserClient & {
   getDomSnapshot: jest.Mock;
   captureScreenshot: jest.Mock;
   getConsoleLogs: jest.Mock;
+  getPage: jest.Mock;
 };
 
 function createMockClient(): MockBrowserClient {
@@ -44,6 +45,7 @@ function createMockClient(): MockBrowserClient {
     getDomSnapshot: jest.fn(async () => '<html></html>'),
     captureScreenshot: jest.fn(async () => 'base64'),
     getConsoleLogs: jest.fn(async () => ['log']),
+    getPage: jest.fn(async () => null),
   };
 }
 
