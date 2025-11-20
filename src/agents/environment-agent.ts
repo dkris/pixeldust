@@ -313,6 +313,9 @@ npx --yes http-server -p 3000 -s -c-1
       })
       .join('\n    ');
 
+    // Generate component list for registration check
+    const componentsList = components.map((c: string) => `'${c}'`).join(', ');
+
     // Generate HTML for each component
     const componentHtml = components
       .map((component: string) => {
@@ -332,6 +335,13 @@ npx --yes http-server -p 3000 -s -c-1
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PixelDust Test Page</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "${frameworkName}/": "/node_modules/${frameworkName}/"
+    }
+  }
+  </script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -359,13 +369,65 @@ npx --yes http-server -p 3000 -s -c-1
     }
   </style>
   <script type="module">
-    ${imports}
+    // Track import errors globally for debugging
+    window.__componentErrors = [];
+
+    // Try to import components with error handling
+    try {
+      ${imports}
+    } catch (error) {
+      console.error('Import error:', error);
+      window.__componentErrors.push(\`Import error: \${error.message}\`);
+    }
+
+    // Wait for all custom elements to be defined
+    const componentNames = [${componentsList}];
+
+    // Set a timeout in case components never load
+    const timeout = setTimeout(() => {
+      if (!document.body.hasAttribute('data-components-ready')) {
+        console.warn('Component loading timed out after 5 seconds');
+        const loadedCount = componentNames.filter(name => customElements.get(name)).length;
+        console.log(\`Loaded \${loadedCount}/\${componentNames.length} components\`);
+        window.__componentErrors.push(\`Timeout: Only \${loadedCount}/\${componentNames.length} components loaded\`);
+        document.body.setAttribute('data-components-ready', 'timeout');
+      }
+    }, 5000);
+
+    Promise.all(
+      componentNames.map(name =>
+        customElements.whenDefined(name).catch(err => {
+          const errMsg = \`Component \${name} failed to load: \${err.message}\`;
+          console.error(errMsg);
+          window.__componentErrors.push(errMsg);
+        })
+      )
+    ).then(() => {
+      clearTimeout(timeout);
+      // Add a marker that tests can check to know components are ready
+      document.body.setAttribute('data-components-ready', window.__componentErrors.length > 0 ? 'error' : 'true');
+      console.log('All UI components are registered and ready');
+      if (window.__componentErrors.length > 0) {
+        console.warn('Component load errors:', window.__componentErrors);
+      }
+    }).catch(error => {
+      clearTimeout(timeout);
+      console.error('Failed to load some components:', error);
+      window.__componentErrors.push(\`Promise error: \${error.message}\`);
+      // Still mark as ready even if some components fail
+      document.body.setAttribute('data-components-ready', 'error');
+    });
   </script>
 </head>
 <body>
   <h1>PixelDust UI Component Test Page</h1>
   <p>This page contains UI components for automated testing.</p>
-  ${componentHtml}
+  <div id="components-container">
+    ${componentHtml}
+  </div>
+  <div id="loading-indicator" style="position: fixed; top: 10px; right: 10px; background: #f0f0f0; padding: 10px; border-radius: 4px; display: none;">
+    <span>Loading components...</span>
+  </div>
 </body>
 </html>`;
   }
