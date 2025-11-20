@@ -12,6 +12,7 @@ import {
   WorkflowDiscoveryArtifact,
   WorkflowDiscoveryConfig,
   Config,
+  InteractiveElement,
 } from '../types';
 import { URL } from 'url';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,6 +22,8 @@ import {
   LocalPlaywrightClient,
   McpPlaywrightClient,
 } from '../services/workflow-discovery/browser-client';
+import { AccessibilitySnapshotCollector } from '../services/accessibility/snapshot-collector';
+import type { AccessibilityTree } from '../types';
 
 type WorkflowDiscoveryClientFactory = (config: Config) => WorkflowDiscoveryBrowserClient;
 
@@ -43,10 +46,12 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
   private frameworkPrefix: string = 'ui5';
   private driverUsed: WorkflowDiscoveryDriver = 'local';
   private clientFactory?: WorkflowDiscoveryClientFactory;
+  private accessibilityCollector: AccessibilitySnapshotCollector;
 
   constructor(db?: DatabaseManager, clientFactory?: WorkflowDiscoveryClientFactory) {
     super(AgentType.WORKFLOW_DISCOVERY, db);
     this.clientFactory = clientFactory;
+    this.accessibilityCollector = new AccessibilitySnapshotCollector();
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
@@ -255,6 +260,21 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
       .map(link => this.normalizeUrl(link))
       .filter(link => this.shouldCrawlUrl(link, url));
 
+    // Capture accessibility tree if page is available
+    let accessibilityTree: AccessibilityTree | undefined;
+    try {
+      const page = await this.client.getPage();
+      if (page) {
+        accessibilityTree = await this.accessibilityCollector.capture(page, 'AA');
+        this.logger.debug(`Captured accessibility tree for ${url}`);
+
+        // Enrich interactive elements with semantic information from accessibility tree
+        this.enrichInteractiveElements(interactiveElements, accessibilityTree);
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to capture accessibility tree for ${url}:`, error as Error);
+    }
+
     this.streamArtifacts(context, {
       url,
       domSnapshot,
@@ -270,8 +290,61 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
       interactiveElements: interactiveElements || [],
       links,
       screenshot,
+      accessibilityTree,
       discoveredAt: new Date(),
     };
+  }
+
+  /**
+   * Enrich interactive elements with semantic information from accessibility tree
+   */
+  private enrichInteractiveElements(
+    interactiveElements: InteractiveElement[],
+    accessibilityTree: AccessibilityTree
+  ): void {
+    // Build a flat map of accessible elements for quick lookup
+    const accessibleElements = this.flattenAccessibilityTree(accessibilityTree.root);
+
+    for (const element of interactiveElements) {
+      // Try to match interactive element with accessibility node
+      // Match by text content or role
+      const matchingNode = accessibleElements.find(node => {
+        // Match by text/name
+        if (element.text && node.name &&
+            node.name.toLowerCase().includes(element.text.toLowerCase())) {
+          return true;
+        }
+        // Match by role
+        const roleMap: Record<string, string[]> = {
+          'button': ['button'],
+          'link': ['link'],
+          'input': ['textbox', 'searchbox', 'spinbutton'],
+          'select': ['combobox', 'listbox'],
+          'form': ['form'],
+        };
+        const expectedRoles = roleMap[element.type] || [];
+        return expectedRoles.includes(node.role);
+      });
+
+      if (matchingNode) {
+        element.role = matchingNode.role;
+        element.accessibleName = matchingNode.name;
+        element.ariaLabel = matchingNode.name; // Simplified - could be more precise
+      }
+    }
+  }
+
+  /**
+   * Flatten accessibility tree into array of nodes
+   */
+  private flattenAccessibilityTree(node: any, result: any[] = []): any[] {
+    result.push(node);
+    if (node.children) {
+      for (const child of node.children) {
+        this.flattenAccessibilityTree(child, result);
+      }
+    }
+    return result;
   }
 
   private streamArtifacts(context: AgentContext, artifact: WorkflowDiscoveryArtifact): void {

@@ -547,6 +547,8 @@ export interface Page {
   links: string[];
   /** Screenshot of the page */
   screenshot?: string;
+  /** Accessibility tree snapshot */
+  accessibilityTree?: AccessibilityTree;
   /** When this page was discovered */
   discoveredAt: Date;
 }
@@ -583,6 +585,14 @@ export interface InteractiveElement {
   action?: string;
   /** Component tag if it's a web component */
   componentTag?: string;
+  /** Accessibility role (e.g., button, link, textbox) */
+  role?: string;
+  /** Accessible name/label */
+  accessibleName?: string;
+  /** ARIA label */
+  ariaLabel?: string;
+  /** Test ID attribute */
+  testId?: string;
 }
 
 /**
