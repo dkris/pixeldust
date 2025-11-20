@@ -134,6 +134,37 @@ export class HybridOrchestratorAgent extends BaseAgent {
         `✗ Stage failed: ${stageName} - ${error}`
       );
     });
+
+    // Save snapshots after execution stage
+    this.eventBus.on(EventType.STAGE_COMPLETED, async (event) => {
+      const { stageName } = event.metadata || {};
+
+      if (stageName === 'EXECUTION' && event.data?.results) {
+        await this.saveSnapshotsFromExecution(event.sessionId, event.data);
+      }
+    });
+
+    // Save snapshot comparisons after analysis stage
+    this.eventBus.on(EventType.STAGE_COMPLETED, async (event) => {
+      const { stageName } = event.metadata || {};
+
+      if (stageName === 'ANALYSIS' && event.data?.comparisons) {
+        // Get session to access versions
+        const session = this.database.getSession(event.sessionId);
+        if (session) {
+          // Get execution results from previous stage context
+          const executionResults = await this.getExecutionResults(event.sessionId);
+          if (executionResults && executionResults.length > 0) {
+            await this.saveSnapshotComparisons(
+              event.sessionId,
+              session.versions,
+              executionResults,
+              event.data.comparisons
+            );
+          }
+        }
+      }
+    });
   }
 
   async execute(context: AgentContext): Promise<AgentResult> {
@@ -251,6 +282,146 @@ export class HybridOrchestratorAgent extends BaseAgent {
    */
   getSessionHistory(sessionId: string) {
     return this.eventBus.getHistory({ sessionId });
+  }
+
+  /**
+   * Save snapshots from execution stage results
+   */
+  private async saveSnapshotsFromExecution(sessionId: string, data: any): Promise<void> {
+    if (!data.results || !Array.isArray(data.results)) {
+      return;
+    }
+
+    try {
+      const session = this.database.getSession(sessionId);
+      if (!session) {
+        this.logger.warn(`Session ${sessionId} not found, skipping snapshot save`);
+        return;
+      }
+
+      for (const testResult of data.results) {
+        // Save test result to database
+        this.database.saveTestResult(testResult);
+
+        // Create and save snapshots from test results
+        for (const screenshot of testResult.screenshots || []) {
+          const snapshot = {
+            id: screenshot.id,
+            sessionId: testResult.sessionId,
+            version: testResult.version,
+            component: testResult.testId, // Use testId as component identifier
+            url: `test://${testResult.testId}`,
+            viewport: session.config.testing?.viewport || { width: 1920, height: 1080 },
+            screenshotPath: screenshot.path,
+            domSnapshot: testResult.domSnapshot || null,
+            computedStyles: null,
+            metrics: testResult.metrics || null,
+            timestamp: Date.now(),
+          };
+
+          this.database.saveSnapshot(snapshot);
+        }
+      }
+
+      this.logger.info(`Saved ${data.results.length} test results and snapshots to database`);
+    } catch (error) {
+      this.logger.error('Failed to save snapshots from execution', error as Error);
+    }
+  }
+
+  /**
+   * Get execution results for a session (from test_runs table)
+   */
+  private async getExecutionResults(sessionId: string): Promise<any[] | null> {
+    try {
+      // Get test results from database
+      const testResults = this.database.getTestResults(sessionId);
+      return testResults;
+    } catch (error) {
+      this.logger.error('Failed to get execution results', error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * Create and save snapshot comparisons from analysis results
+   * (Ported from OrchestratorAgent for hybrid architecture)
+   */
+  private async saveSnapshotComparisons(
+    sessionId: string,
+    versions: string[],
+    testResults: any[],
+    comparisons: any[]
+  ): Promise<void> {
+    try {
+      const baseVersion = versions[0];
+
+      for (let i = 1; i < versions.length; i++) {
+        const targetVersion = versions[i];
+
+        // Get snapshots for base and target versions
+        const baseSnapshots = this.database.getSnapshots(sessionId, baseVersion);
+        const targetSnapshots = this.database.getSnapshots(sessionId, targetVersion);
+
+        // Group snapshots by component (testId)
+        const snapshotsByComponent = new Map<string, { base: any[], target: any[] }>();
+
+        for (const baseSnapshot of baseSnapshots) {
+          if (!snapshotsByComponent.has(baseSnapshot.component)) {
+            snapshotsByComponent.set(baseSnapshot.component, { base: [], target: [] });
+          }
+          snapshotsByComponent.get(baseSnapshot.component)!.base.push(baseSnapshot);
+        }
+
+        for (const targetSnapshot of targetSnapshots) {
+          if (!snapshotsByComponent.has(targetSnapshot.component)) {
+            snapshotsByComponent.set(targetSnapshot.component, { base: [], target: [] });
+          }
+          snapshotsByComponent.get(targetSnapshot.component)!.target.push(targetSnapshot);
+        }
+
+        // Create comparisons for matching components
+        for (const [component, snapshots] of snapshotsByComponent.entries()) {
+          if (snapshots.base.length > 0 && snapshots.target.length > 0) {
+            // Use first snapshot from each version for comparison
+            const baseSnapshot = snapshots.base[0];
+            const targetSnapshot = snapshots.target[0];
+
+            // Find visual diff data from analysis results
+            const comparison = comparisons.find(c =>
+              c.baseVersion === baseVersion && c.targetVersion === targetVersion
+            );
+
+            const visualDiff = comparison?.differences.find((d: any) =>
+              d.type === 'VISUAL' && d.location?.includes(component)
+            );
+
+            const snapshotComparison = {
+              id: `${baseSnapshot.id}-${targetSnapshot.id}`,
+              sessionId,
+              baseSnapshotId: baseSnapshot.id,
+              targetSnapshotId: targetSnapshot.id,
+              component,
+              visualDiff: visualDiff?.visualDiff || null,
+              domDiff: null,
+              styleDiff: null,
+              similarityScore: visualDiff?.visualDiff
+                ? 100 - visualDiff.visualDiff.pixelDiffPercentage
+                : 100,
+              differencesFound: visualDiff ? 1 : 0,
+              verdict: visualDiff ? 'DIFFERENCES_DETECTED' : 'IDENTICAL',
+              timestamp: Date.now(),
+            };
+
+            this.database.saveSnapshotComparison(snapshotComparison);
+          }
+        }
+      }
+
+      this.logger.info('Saved snapshot comparisons to database');
+    } catch (error) {
+      this.logger.error('Failed to save snapshot comparisons', error as Error);
+    }
   }
 }
 
