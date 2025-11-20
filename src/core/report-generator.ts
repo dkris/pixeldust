@@ -85,6 +85,42 @@ export class ReportGenerator {
     md += `- **Approved Remediations:** ${report.summary.approvedRemediations}\n`;
     md += `- **Pending Remediations:** ${report.summary.pendingRemediations}\n\n`;
 
+    // Accessibility Summary
+    const accessibilityDiffs = report.comparisons.flatMap(c =>
+      c.differences.filter(d => d.type === 'ACCESSIBILITY')
+    );
+
+    if (accessibilityDiffs.length > 0) {
+      md += `## Accessibility Summary\n\n`;
+      md += `- **Total Accessibility Changes:** ${accessibilityDiffs.length}\n`;
+
+      const violations = accessibilityDiffs.filter(d =>
+        d.description.includes('violation') || d.description.includes('WCAG')
+      );
+      const improvements = accessibilityDiffs.filter(d =>
+        d.category === 'BUG_FIX' || d.description.includes('fixed')
+      );
+      const breaking = accessibilityDiffs.filter(d =>
+        d.category === 'BREAKING' && !d.description.includes('fixed')
+      );
+
+      md += `- **New Accessibility Violations:** ${violations.length}\n`;
+      md += `- **Accessibility Improvements:** ${improvements.length}\n`;
+      md += `- **Breaking Accessibility Changes:** ${breaking.length}\n\n`;
+
+      // WCAG Compliance
+      md += `### WCAG 2.2 Compliance\n\n`;
+      md += `All tests are evaluated against WCAG 2.2 Level AA standards.\n\n`;
+
+      if (violations.length > 0) {
+        md += `⚠️ **${violations.length} new WCAG violation(s) detected**\n\n`;
+      } else if (improvements.length > 0) {
+        md += `✅ **${improvements.length} WCAG violation(s) fixed**\n\n`;
+      } else {
+        md += `✅ No new WCAG violations detected\n\n`;
+      }
+    }
+
     // Comparisons
     md += `## Version Comparisons\n\n`;
     for (const comparison of report.comparisons) {
@@ -93,14 +129,94 @@ export class ReportGenerator {
       md += `**Differences:** ${comparison.differences.length}\n\n`;
 
       if (comparison.differences.length > 0) {
-        md += `#### Detected Differences\n\n`;
-        for (const diff of comparison.differences) {
-          md += `- **[${diff.severity}]** ${diff.type}: ${diff.description}\n`;
-          if (diff.location) {
-            md += `  - Location: ${diff.location}\n`;
+        // Group differences by type
+        const diffsByType = comparison.differences.reduce((acc, diff) => {
+          if (!acc[diff.type]) acc[diff.type] = [];
+          acc[diff.type].push(diff);
+          return acc;
+        }, {} as Record<string, typeof comparison.differences>);
+
+        // Visual Differences
+        if (diffsByType.VISUAL) {
+          md += `#### Visual Differences (${diffsByType.VISUAL.length})\n\n`;
+          for (const diff of diffsByType.VISUAL) {
+            md += `- **[${diff.severity}]** ${diff.description}\n`;
+            if (diff.location) md += `  - Location: ${diff.location}\n`;
           }
+          md += `\n`;
         }
-        md += `\n`;
+
+        // Accessibility Differences
+        if (diffsByType.ACCESSIBILITY) {
+          md += `#### Accessibility Differences (${diffsByType.ACCESSIBILITY.length})\n\n`;
+          for (const diff of diffsByType.ACCESSIBILITY) {
+            md += `- **[${diff.severity}]** ${diff.description}\n`;
+            if (diff.location) md += `  - Location: ${diff.location}\n`;
+
+            // Add detailed accessibility information
+            if (diff.accessibilityDiff) {
+              const aDiff = diff.accessibilityDiff;
+
+              if (aDiff.violations?.new && aDiff.violations.new.length > 0) {
+                md += `  - **New Violations:**\n`;
+                for (const violation of aDiff.violations.new.slice(0, 3)) {
+                  md += `    - [${violation.impact.toUpperCase()}] ${violation.help}\n`;
+                  md += `      - ${violation.helpUrl}\n`;
+                  if (violation.wcagTags.length > 0) {
+                    md += `      - WCAG: ${violation.wcagTags.join(', ')}\n`;
+                  }
+                }
+                if (aDiff.violations.new.length > 3) {
+                  md += `    - ... and ${aDiff.violations.new.length - 3} more\n`;
+                }
+              }
+
+              if (aDiff.modified && aDiff.modified.length > 0) {
+                md += `  - **Modified Elements:** ${aDiff.modified.length}\n`;
+                for (const mod of aDiff.modified.slice(0, 3)) {
+                  md += `    - ${mod.field} changed at ${mod.path}\n`;
+                }
+                if (aDiff.modified.length > 3) {
+                  md += `    - ... and ${aDiff.modified.length - 3} more\n`;
+                }
+              }
+            }
+          }
+          md += `\n`;
+        }
+
+        // Structural Differences
+        if (diffsByType.STRUCTURAL) {
+          md += `#### Structural Differences (${diffsByType.STRUCTURAL.length})\n\n`;
+          for (const diff of diffsByType.STRUCTURAL) {
+            md += `- **[${diff.severity}]** ${diff.description}\n`;
+            if (diff.location) md += `  - Location: ${diff.location}\n`;
+          }
+          md += `\n`;
+        }
+
+        // Performance Differences
+        if (diffsByType.PERFORMANCE) {
+          md += `#### Performance Differences (${diffsByType.PERFORMANCE.length})\n\n`;
+          for (const diff of diffsByType.PERFORMANCE) {
+            md += `- **[${diff.severity}]** ${diff.description}\n`;
+            if (diff.location) md += `  - Location: ${diff.location}\n`;
+          }
+          md += `\n`;
+        }
+
+        // Other Differences
+        const otherTypes = Object.keys(diffsByType).filter(
+          t => !['VISUAL', 'ACCESSIBILITY', 'STRUCTURAL', 'PERFORMANCE'].includes(t)
+        );
+        for (const type of otherTypes) {
+          md += `#### ${type} Differences (${diffsByType[type].length})\n\n`;
+          for (const diff of diffsByType[type]) {
+            md += `- **[${diff.severity}]** ${diff.description}\n`;
+            if (diff.location) md += `  - Location: ${diff.location}\n`;
+          }
+          md += `\n`;
+        }
       }
     }
 

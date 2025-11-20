@@ -10,6 +10,8 @@ import {
   Severity,
   VisualDiff,
   DOMDiff,
+  AccessibilityDiff,
+  AccessibilityNodeChange,
 } from '../types';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
@@ -18,6 +20,7 @@ import path from 'path';
 import { JSDOM } from 'jsdom';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseManager } from '../storage/database';
+import { accessibilityCollector } from '../services/accessibility/snapshot-collector';
 
 /**
  * Analysis Agent - Compares results across versions
@@ -25,8 +28,8 @@ import { DatabaseManager } from '../storage/database';
  * Responsibilities:
  * - Visual comparison (pixel-perfect + perceptual)
  * - DOM structure comparison
+ * - Accessibility tree comparison
  * - Performance comparison
- * - Accessibility comparison
  * - Generate detailed difference reports
  */
 export class AnalysisAgent extends BaseAgent {
@@ -106,6 +109,10 @@ export class AnalysisAgent extends BaseAgent {
     // DOM comparison
     const domDiffs = await this.compareDOMs(baseResults, targetResults, config);
     differences.push(...domDiffs);
+
+    // Accessibility tree comparison
+    const accessibilityDiffs = await this.compareAccessibility(baseResults, targetResults, config);
+    differences.push(...accessibilityDiffs);
 
     // Performance comparison
     const perfDiffs = this.comparePerformance(baseResults, targetResults, config);
@@ -316,6 +323,203 @@ export class AnalysisAgent extends BaseAgent {
     return a.tagName === b.tagName &&
            a.path === b.path &&
            JSON.stringify(a.attributes) === JSON.stringify(b.attributes);
+  }
+
+  private async compareAccessibility(
+    baseResults: any[],
+    targetResults: any[],
+    config: any
+  ): Promise<Difference[]> {
+    const differences: Difference[] = [];
+
+    for (const baseResult of baseResults) {
+      const targetResult = targetResults.find(r => r.testId === baseResult.testId);
+      if (!targetResult) continue;
+
+      // Skip if either result lacks accessibility snapshot
+      if (!baseResult.accessibilitySnapshot || !targetResult.accessibilitySnapshot) {
+        continue;
+      }
+
+      try {
+        const accessibilityDiff = this.diffAccessibilityTrees(
+          baseResult.accessibilitySnapshot,
+          targetResult.accessibilitySnapshot
+        );
+
+        // Check for tree structure changes
+        if (accessibilityDiff.added.length > 0) {
+          differences.push({
+            type: DifferenceType.ACCESSIBILITY,
+            category: DifferenceCategory.ENHANCEMENT,
+            severity: Severity.INFO,
+            description: `${accessibilityDiff.added.length} new accessible element(s) added`,
+            location: baseResult.testId,
+            accessibilityDiff,
+          });
+        }
+
+        if (accessibilityDiff.removed.length > 0) {
+          differences.push({
+            type: DifferenceType.ACCESSIBILITY,
+            category: DifferenceCategory.BREAKING,
+            severity: Severity.HIGH,
+            description: `${accessibilityDiff.removed.length} accessible element(s) removed`,
+            location: baseResult.testId,
+            accessibilityDiff,
+          });
+        }
+
+        // Check for modifications
+        for (const change of accessibilityDiff.modified) {
+          const severity = this.getAccessibilityChangeSeverity(change);
+          const description = this.getAccessibilityChangeDescription(change);
+
+          differences.push({
+            type: DifferenceType.ACCESSIBILITY,
+            category: change.impact === 'critical' ? DifferenceCategory.BREAKING : DifferenceCategory.ENHANCEMENT,
+            severity,
+            description,
+            location: `${baseResult.testId}/${change.path}`,
+            baseValue: change.oldValue,
+            targetValue: change.newValue,
+            accessibilityDiff,
+          });
+        }
+
+        // Check for new violations
+        if (accessibilityDiff.violations.new.length > 0) {
+          for (const violation of accessibilityDiff.violations.new) {
+            differences.push({
+              type: DifferenceType.ACCESSIBILITY,
+              category: DifferenceCategory.BREAKING,
+              severity: this.mapViolationImpactToSeverity(violation.impact),
+              description: `New accessibility violation: ${violation.description}`,
+              location: baseResult.testId,
+              accessibilityDiff,
+            });
+          }
+        }
+
+        // Check for fixed violations
+        if (accessibilityDiff.violations.fixed.length > 0) {
+          differences.push({
+            type: DifferenceType.ACCESSIBILITY,
+            category: DifferenceCategory.BUG_FIX,
+            severity: Severity.INFO,
+            description: `${accessibilityDiff.violations.fixed.length} accessibility violation(s) fixed`,
+            location: baseResult.testId,
+            accessibilityDiff,
+          });
+        }
+      } catch (error) {
+        this.logger.warn('Failed to compare accessibility trees', error as Error);
+      }
+    }
+
+    return differences;
+  }
+
+  private diffAccessibilityTrees(
+    baseTree: any,
+    targetTree: any
+  ): AccessibilityDiff {
+    // Use the accessibility collector to compare nodes
+    const nodeDiff = accessibilityCollector.compareNodes(
+      baseTree.root,
+      targetTree.root
+    );
+
+    // Compare violations
+    const baseViolations = baseTree.violations || [];
+    const targetViolations = targetTree.violations || [];
+
+    const newViolations = targetViolations.filter((tv: any) =>
+      !baseViolations.some((bv: any) => bv.id === tv.id)
+    );
+
+    const fixedViolations = baseViolations.filter((bv: any) =>
+      !targetViolations.some((tv: any) => tv.id === bv.id)
+    );
+
+    const existingViolations = baseViolations.filter((bv: any) =>
+      targetViolations.some((tv: any) => tv.id === bv.id)
+    );
+
+    // Map modifications to AccessibilityNodeChange format
+    const modifications: AccessibilityNodeChange[] = nodeDiff.modified.map(mod => ({
+      path: mod.path,
+      field: mod.field as any,
+      oldValue: mod.oldValue,
+      newValue: mod.newValue,
+      impact: this.determineImpact(mod.field),
+    }));
+
+    return {
+      added: nodeDiff.added,
+      removed: nodeDiff.removed,
+      modified: modifications,
+      violations: {
+        new: newViolations,
+        fixed: fixedViolations,
+        existing: existingViolations,
+      },
+    };
+  }
+
+  private determineImpact(field: string): 'critical' | 'high' | 'medium' | 'low' {
+    // Role changes are critical as they affect how screen readers interpret elements
+    if (field === 'role') return 'critical';
+
+    // Name changes are high impact as they affect element identification
+    if (field === 'name') return 'high';
+
+    // State changes can be medium to high depending on the state
+    if (field === 'states') return 'medium';
+
+    // Other changes are generally low impact
+    return 'low';
+  }
+
+  private getAccessibilityChangeSeverity(change: AccessibilityNodeChange): Severity {
+    switch (change.impact) {
+      case 'critical':
+        return Severity.CRITICAL;
+      case 'high':
+        return Severity.HIGH;
+      case 'medium':
+        return Severity.MEDIUM;
+      case 'low':
+        return Severity.LOW;
+      default:
+        return Severity.INFO;
+    }
+  }
+
+  private getAccessibilityChangeDescription(change: AccessibilityNodeChange): string {
+    const oldVal = typeof change.oldValue === 'object'
+      ? JSON.stringify(change.oldValue)
+      : change.oldValue;
+    const newVal = typeof change.newValue === 'object'
+      ? JSON.stringify(change.newValue)
+      : change.newValue;
+
+    return `Accessibility ${change.field} changed at ${change.path}: ${oldVal} → ${newVal}`;
+  }
+
+  private mapViolationImpactToSeverity(impact: 'critical' | 'serious' | 'moderate' | 'minor'): Severity {
+    switch (impact) {
+      case 'critical':
+        return Severity.CRITICAL;
+      case 'serious':
+        return Severity.HIGH;
+      case 'moderate':
+        return Severity.MEDIUM;
+      case 'minor':
+        return Severity.LOW;
+      default:
+        return Severity.INFO;
+    }
   }
 
   private comparePerformance(

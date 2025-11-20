@@ -269,6 +269,7 @@ export interface TestResult {
   error?: string;
   screenshots: Screenshot[];
   domSnapshot?: string;
+  accessibilitySnapshot?: AccessibilityTree;
   metrics?: PerformanceMetrics;
   executedAt: Date;
 }
@@ -315,6 +316,7 @@ export interface Difference {
   targetValue?: any;
   visualDiff?: VisualDiff;
   domDiff?: DOMDiff;
+  accessibilityDiff?: AccessibilityDiff;
 }
 
 export enum DifferenceType {
@@ -366,6 +368,70 @@ export interface DOMNodeChange {
   attribute: string;
   oldValue: any;
   newValue: any;
+}
+
+export interface AccessibilityNode {
+  role: string;
+  name?: string;
+  description?: string;
+  value?: string;
+  children: AccessibilityNode[];
+  properties?: Record<string, any>;
+  path: string;
+  tagName?: string;
+  attributes?: Record<string, string>;
+  states?: {
+    checked?: boolean | 'mixed';
+    disabled?: boolean;
+    expanded?: boolean;
+    hidden?: boolean;
+    pressed?: boolean | 'mixed';
+    selected?: boolean;
+    readonly?: boolean;
+    required?: boolean;
+    invalid?: boolean;
+  };
+  level?: number;
+}
+
+export interface AccessibilityTree {
+  root: AccessibilityNode;
+  violations?: AccessibilityViolation[];
+  wcagLevel?: 'A' | 'AA' | 'AAA';
+  capturedAt: Date;
+}
+
+export interface AccessibilityViolation {
+  id: string;
+  impact: 'critical' | 'serious' | 'moderate' | 'minor';
+  description: string;
+  help: string;
+  helpUrl: string;
+  nodes: {
+    target: string[];
+    html: string;
+    failureSummary?: string;
+  }[];
+  wcagTags: string[];
+}
+
+export interface AccessibilityDiff {
+  added: AccessibilityNode[];
+  removed: AccessibilityNode[];
+  modified: AccessibilityNodeChange[];
+  violations: {
+    new: AccessibilityViolation[];
+    fixed: AccessibilityViolation[];
+    existing: AccessibilityViolation[];
+  };
+}
+
+export interface AccessibilityNodeChange {
+  path: string;
+  field: 'role' | 'name' | 'description' | 'value' | 'properties' | 'states';
+  oldValue: any;
+  newValue: any;
+  impact: 'critical' | 'high' | 'medium' | 'low';
 }
 
 // ============================================================================

@@ -502,9 +502,17 @@ export class TestGenerationAgent extends BaseAgent {
 
 Categories (balanced):
 1. Visual (40%): Rendering, layout
-2. Accessibility (30%): ARIA, keyboard, screen reader
+2. Accessibility (30%): ARIA, keyboard, screen reader, semantic structure
 3. Functional (20%): User interactions, workflows
 4. Performance (10%): Load time, responsiveness, speed
+
+For Accessibility tests:
+- Use semantic selectors based on roles and labels (e.g., page.getByRole('button', { name: 'Submit' }))
+- Verify ARIA attributes (aria-label, aria-describedby, role)
+- Test keyboard navigation (Tab, Enter, Space, Arrow keys)
+- Check focus management and visual focus indicators
+- Validate heading hierarchy and landmark regions
+- Test with accessibility tree snapshot validation
 
 Each test needs:
 - Name (kebab-case, e.g., "${component}-form-submit")
@@ -519,9 +527,18 @@ Generate 6-8 tests for application workflows.`;
 
 Categories (balanced, at least one each):
 1. Visual (40%): Rendering, layout
-2. Accessibility (30%): ARIA, keyboard, screen reader
+2. Accessibility (30%): ARIA, keyboard, screen reader, semantic structure
 3. Functional (20%): User interactions, workflows
 4. Performance (10%): Load time, responsiveness, speed
+
+For Accessibility tests:
+- Use semantic selectors: page.getByRole(), page.getByLabel(), page.getByText()
+- Verify ARIA roles and properties (role, aria-label, aria-describedby, aria-expanded, etc.)
+- Test keyboard interactions (Tab, Enter, Space, Arrow keys for composite widgets)
+- Validate focus order and focus visibility
+- Check accessible names and descriptions
+- Test state changes (aria-pressed, aria-checked, aria-expanded)
+- The test framework captures accessibility trees automatically for comparison
 
 Each test:
 - Name (kebab-case with component)
