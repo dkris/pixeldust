@@ -1,10 +1,11 @@
 import { BaseAgent } from './base-agent';
-import { AgentType, AgentContext, AgentResult, TestResult, Screenshot } from '../types';
+import { AgentType, AgentContext, AgentResult, TestResult, Screenshot, AccessibilityTree } from '../types';
 import { chromium, firefox, webkit, Browser, Page } from 'playwright';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs/promises';
 import { DatabaseManager } from '../storage/database';
+import { accessibilityCollector } from '../services/accessibility/snapshot-collector';
 
 /**
  * Execution Agent - Runs tests and collects data
@@ -13,6 +14,7 @@ import { DatabaseManager } from '../storage/database';
  * - Execute Playwright tests
  * - Capture screenshots
  * - Extract DOM snapshots
+ * - Collect accessibility tree snapshots
  * - Collect performance metrics
  * - Parallel execution
  */
@@ -198,6 +200,9 @@ export class ExecutionAgent extends BaseAgent {
       // Extract DOM snapshot
       const domSnapshot = await this.extractDOM(page);
 
+      // Collect accessibility tree snapshot
+      const accessibilitySnapshot = await this.collectAccessibilitySnapshot(page);
+
       // Collect performance metrics
       const metrics = await this.collectMetrics(page);
 
@@ -214,6 +219,7 @@ export class ExecutionAgent extends BaseAgent {
         duration,
         screenshots,
         domSnapshot,
+        accessibilitySnapshot,
         metrics,
         executedAt: new Date(),
       };
@@ -495,6 +501,16 @@ export class ExecutionAgent extends BaseAgent {
     } catch (error) {
       this.logger.warn('Failed to collect metrics', error as Error);
       return null;
+    }
+  }
+
+  private async collectAccessibilitySnapshot(page: Page): Promise<AccessibilityTree | undefined> {
+    try {
+      this.logger.debug('Collecting accessibility tree snapshot');
+      return await accessibilityCollector.capture(page, 'AA');
+    } catch (error) {
+      this.logger.warn('Failed to collect accessibility snapshot', error as Error);
+      return undefined;
     }
   }
 
