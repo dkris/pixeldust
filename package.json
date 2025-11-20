@@ -35,7 +35,7 @@
     "@anthropic-ai/sdk": "^0.27.0",
     "@modelcontextprotocol/sdk": "^1.22.0",
     "@playwright/test": "^1.40.0",
-    "better-sqlite3": "^9.2.2",
+    "better-sqlite3": "^12.4.1",
     "cheerio": "^1.0.0-rc.12",
     "commander": "^11.1.0",
     "cors": "^2.8.5",
