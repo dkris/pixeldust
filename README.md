@@ -653,22 +653,60 @@ interface Config {
 
   workflowDiscovery?: {
     driver: 'local' | 'mcp';
-    maxDepth?: number;
-    maxPages?: number;
+    maxDepth?: number;                // Max crawl depth (default: 3)
+    maxPages?: number;                // Max pages to discover (default: 50)
     mcp?: {
-      endpoint: string;
-      timeoutMs?: number;
+      endpoint: string;               // MCP server URL
+      serverType?: 'custom' | 'playwright-mcp';  // Server type (default: 'playwright-mcp')
+      timeoutMs?: number;             // Request timeout
       credentials?: {
-        token?: string;
-        username?: string;
-        password?: string;
+        token?: string;               // Bearer token
+        username?: string;            // Basic auth username
+        password?: string;            // Basic auth password
+      };
+      tools?: {                       // Custom tool name overrides (optional)
+        start?: string;
+        goto?: string;
+        snapshot?: string;
+        // ... other tool mappings
       };
     };
   };
 }
 ```
 
-The `workflowDiscovery` block controls whether the agent launches a local Playwright browser (`driver: "local"`) or issues MCP tool calls to a remote Playwright session (`driver: "mcp"`). When using MCP you can configure the endpoint and credentials directly in the config or via the environment variables `PIXELDUST_MCP_ENDPOINT`, `PIXELDUST_MCP_TOKEN`, `PIXELDUST_MCP_USERNAME`, `PIXELDUST_MCP_PASSWORD`, and `PIXELDUST_MCP_TIMEOUT`.
+### Workflow Discovery
+
+The `workflowDiscovery` block controls whether the agent launches a local Playwright browser (`driver: "local"`) or connects to an MCP (Model Context Protocol) server for remote browser automation (`driver: "mcp"`).
+
+**MCP Server Support:**
+- **Official Playwright MCP** (`serverType: "playwright-mcp"`) - Recommended. Uses Microsoft's official [@playwright/mcp](https://github.com/microsoft/playwright-mcp) server
+- **Custom MCP Server** (`serverType: "custom"`) - For your own MCP implementation with custom tool mappings
+
+When using MCP, you can configure the endpoint and credentials directly in the config or via environment variables:
+- `PIXELDUST_MCP_ENDPOINT` - MCP server URL
+- `PIXELDUST_MCP_TOKEN` - Bearer token for authentication
+- `PIXELDUST_MCP_USERNAME` - Basic auth username
+- `PIXELDUST_MCP_PASSWORD` - Basic auth password
+- `PIXELDUST_MCP_TIMEOUT` - Request timeout in milliseconds
+
+**Example MCP Configuration:**
+```json
+{
+  "workflowDiscovery": {
+    "driver": "mcp",
+    "maxDepth": 3,
+    "maxPages": 50,
+    "mcp": {
+      "endpoint": "http://localhost:3000",
+      "serverType": "playwright-mcp",
+      "timeoutMs": 30000
+    }
+  }
+}
+```
+
+For detailed setup instructions, see [MCP Server Setup Guide](docs/MCP_SERVER_SETUP.md).
 
 ## CLI Commands
 

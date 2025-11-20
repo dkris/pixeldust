@@ -131,8 +131,11 @@ export interface WorkflowDiscoveryConfig {
   mcp?: WorkflowDiscoveryMcpConfig;
 }
 
+export type McpServerType = 'custom' | 'playwright-mcp';
+
 export interface WorkflowDiscoveryMcpConfig {
   endpoint: string;
+  serverType?: McpServerType;
   timeoutMs?: number;
   credentials?: {
     token?: string;

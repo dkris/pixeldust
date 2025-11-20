@@ -548,6 +548,7 @@ export class WorkflowDiscoveryAgent extends BaseAgent {
       }
       return new McpPlaywrightClient({
         endpoint: driverConfig.mcp.endpoint,
+        serverType: driverConfig.mcp.serverType || 'playwright-mcp',
         timeoutMs: driverConfig.mcp.timeoutMs,
         credentials: driverConfig.mcp.credentials,
         tools: driverConfig.mcp.tools,

@@ -13,6 +13,7 @@ const WorkflowDiscoverySchema = z
     mcp: z
       .object({
         endpoint: z.string().url(),
+        serverType: z.enum(['custom', 'playwright-mcp']).optional().default('playwright-mcp'),
         timeoutMs: z.number().optional(),
         credentials: z
           .object({

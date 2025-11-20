@@ -84,6 +84,7 @@ program
   .option('--orchestrator <mode>', ORCHESTRATOR_OPTION_DESCRIPTION)
   .option('--workflow-driver <driver>', 'Override workflow discovery driver (local | mcp)')
   .option('--workflow-mcp-endpoint <url>', 'Override MCP endpoint for workflow discovery')
+  .option('--workflow-mcp-server-type <type>', 'MCP server type (custom | playwright-mcp)', 'playwright-mcp')
   .option('--workflow-mcp-token <token>', 'Set MCP bearer token for workflow discovery')
   .option('--workflow-mcp-username <username>', 'Set MCP basic auth username for workflow discovery')
   .option('--workflow-mcp-password <password>', 'Set MCP basic auth password for workflow discovery')
@@ -126,6 +127,7 @@ program
       applyWorkflowDriverOverrides(config, {
         driver: options.workflowDriver,
         endpoint: options.workflowMcpEndpoint,
+        serverType: options.workflowMcpServerType,
         token: options.workflowMcpToken,
         username: options.workflowMcpUsername,
         password: options.workflowMcpPassword,
@@ -639,6 +641,7 @@ program
   .option('--no-screenshots', 'Skip taking screenshots')
   .option('--driver <driver>', 'Workflow discovery driver (local | mcp)')
   .option('--mcp-endpoint <url>', 'MCP endpoint for remote workflow discovery')
+  .option('--mcp-server-type <type>', 'MCP server type (custom | playwright-mcp)', 'playwright-mcp')
   .option('--mcp-token <token>', 'MCP bearer token for remote workflow discovery')
   .option('--mcp-username <username>', 'MCP basic auth username for workflow discovery')
   .option('--mcp-password <password>', 'MCP basic auth password for workflow discovery')
@@ -750,6 +753,7 @@ program
       applyWorkflowDriverOverrides(config, {
         driver: options.driver,
         endpoint: options.mcpEndpoint,
+        serverType: options.mcpServerType,
         token: options.mcpToken,
         username: options.mcpUsername,
         password: options.mcpPassword,
@@ -918,6 +922,7 @@ function parseOrchestratorOption(mode?: string): OrchestratorMode | undefined {
 interface WorkflowDriverOverrideOptions {
   driver?: string;
   endpoint?: string;
+  serverType?: string;
   token?: string;
   username?: string;
   password?: string;
@@ -943,6 +948,7 @@ function applyWorkflowDriverOverrides(config: Config, overrides: WorkflowDriverO
 
   if (
     overrides.endpoint ||
+    overrides.serverType ||
     overrides.token ||
     overrides.username ||
     overrides.password ||
@@ -955,9 +961,18 @@ function applyWorkflowDriverOverrides(config: Config, overrides: WorkflowDriverO
           : overrides.timeout
         : config.workflowDiscovery.mcp?.timeoutMs;
 
+    const serverType = overrides.serverType
+      ? (overrides.serverType.toLowerCase() as 'custom' | 'playwright-mcp')
+      : config.workflowDiscovery.mcp?.serverType || 'playwright-mcp';
+
+    if (serverType !== 'custom' && serverType !== 'playwright-mcp') {
+      throw new Error(`Invalid MCP server type: ${overrides.serverType}. Use 'custom' or 'playwright-mcp'.`);
+    }
+
     config.workflowDiscovery.mcp = {
       ...config.workflowDiscovery.mcp,
       endpoint: overrides.endpoint || config.workflowDiscovery.mcp?.endpoint || '',
+      serverType,
       timeoutMs: timeoutValue,
       credentials: {
         ...(config.workflowDiscovery.mcp?.credentials || {}),
