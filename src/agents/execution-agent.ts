@@ -184,6 +184,9 @@ export class ExecutionAgent extends BaseAgent {
       // Wait for page to be ready
       await page.waitForLoadState('networkidle', { timeout: config.testing.timeout });
 
+      // Wait for web components to be registered (if this is a framework test page)
+      await this.waitForComponentsReady(page);
+
       // Execute the actual test based on category
       await this.executeTestLogic(page, test, config);
 
@@ -233,6 +236,47 @@ export class ExecutionAgent extends BaseAgent {
         screenshots: [],
         executedAt: new Date(),
       };
+    }
+  }
+
+  /**
+   * Wait for web components to be ready (framework test pages only)
+   */
+  private async waitForComponentsReady(page: Page): Promise<void> {
+    try {
+      // Wait for the components-ready attribute to be set (max 15 seconds)
+      await page.waitForFunction(
+        () => document.body.hasAttribute('data-components-ready'),
+        { timeout: 15000 }
+      ).catch(() => {
+        // Timeout is OK - this might not be a framework test page
+        this.logger.debug('No component ready marker found - likely an application page');
+      });
+
+      // Check the status of component loading
+      const status = await page.evaluate(() => document.body.getAttribute('data-components-ready'));
+
+      if (status === 'error') {
+        this.logger.warn('Some web components failed to load, but continuing with test');
+
+        // Log console errors from the page
+        const errors = await page.evaluate(() => {
+          return (window as any).__componentErrors || [];
+        });
+
+        if (errors.length > 0) {
+          this.logger.warn('Component errors:', errors);
+        }
+      } else if (status === 'timeout') {
+        this.logger.warn('Component loading timed out, but continuing with test');
+      } else if (status === 'true') {
+        this.logger.debug('All web components loaded successfully');
+      }
+
+      // Additional wait for components to fully render (paint cycles)
+      await page.waitForTimeout(1500);
+    } catch (error) {
+      this.logger.debug('Component ready check failed or timed out - continuing anyway');
     }
   }
 
