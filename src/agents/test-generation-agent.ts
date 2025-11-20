@@ -49,6 +49,12 @@ export class TestGenerationAgent extends BaseAgent {
       const { config, session } = context;
 
       try {
+        // Validate that ANTHROPIC_API_KEY is set
+        if (!process.env.ANTHROPIC_API_KEY) {
+          this.logger.warn('ANTHROPIC_API_KEY is not set - test generation may fail');
+          this.logger.warn('Please set ANTHROPIC_API_KEY environment variable to enable AI-powered test generation');
+        }
+
         this.logger.info('Generating test suites');
 
         const testSuites: TestSuite[] = [];
@@ -71,10 +77,13 @@ export class TestGenerationAgent extends BaseAgent {
 
         this.logger.info(`Found ${validComponents.length} valid components to test`);
 
+        this.logger.info(`Starting test generation for ${validComponents.length} components`);
+
         for (const component of validComponents) {
-          this.logger.info(`Generating tests for component: ${component}`);
+          this.logger.info(`[${validComponents.indexOf(component) + 1}/${validComponents.length}] Generating tests for component: ${component}`);
 
           const tests = await this.generateTestsForComponent(component, config, workflowData, context);
+          this.logger.info(`Generated ${tests.length} tests for ${component}`);
 
           const testSuite: TestSuite = {
             id: uuidv4(),
@@ -447,10 +456,13 @@ export class TestGenerationAgent extends BaseAgent {
     const forceRegenerate = config.forceRegenerateTests || false;
 
     if (!forceRegenerate && await this.shouldUseCachedTests(component, frameworkName, frameworkVersion)) {
+      this.logger.info(`Checking cache for ${component}...`);
       const cachedTests = await this.getCachedTests(component, frameworkName);
       if (cachedTests) {
+        this.logger.info(`Using ${cachedTests.length} cached tests for ${component}`);
         return cachedTests;
       }
+      this.logger.info(`No cached tests found for ${component}, generating new tests`);
     }
 
     // Determine if we're in application mode or framework-only mode
@@ -574,6 +586,7 @@ Focus on core functionality for version testing. Generate 6-8 tests.`;
     }
 
     try {
+      this.logger.info(`Calling Anthropic API to generate tests for ${component}...`);
       const response = await this.ai.messages.create({
         model: config.ai.model,
         max_tokens: config.ai.maxTokens || 8192,
@@ -625,6 +638,8 @@ Focus on core functionality for version testing. Generate 6-8 tests.`;
         ],
         tool_choice: { type: 'tool', name: 'generate_tests' },
       });
+
+      this.logger.info(`Received response from Anthropic API for ${component}`);
 
       // Find the tool use block in the response
       const toolUseBlock = response.content.find(block => block.type === 'tool_use');
@@ -701,7 +716,14 @@ Focus on core functionality for version testing. Generate 6-8 tests.`;
 
     } catch (error) {
       this.logger.error(`Failed to generate tests for ${component}`, error as Error);
-      this.logger.info(`Using fallback tests for ${component}`);
+
+      // Check if error is due to missing API key
+      if ((error as Error).message.includes('api_key') || (error as Error).message.includes('API key')) {
+        this.logger.error('ANTHROPIC_API_KEY is missing or invalid - falling back to default tests');
+        this.logger.error('Please set ANTHROPIC_API_KEY environment variable to enable AI-powered test generation');
+      }
+
+      this.logger.info(`Using fallback default tests for ${component}`);
 
       // Fallback: return basic tests
       return this.getDefaultTests(component);
