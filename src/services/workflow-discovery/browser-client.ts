@@ -1,7 +1,7 @@
 import { chromium, Browser, Page as PlaywrightPage } from 'playwright';
 import Logger from '../../utils/logger';
 import { InteractiveElement, PageComponent } from '../../types';
-import type { McpClient, McpClientConstructor, McpToolResponse } from '../../types/mcp';
+import type { McpClient, McpClientConstructor, McpClientOptions, McpToolCallRequest, McpToolResponse } from '../../types/mcp';
 
 export interface WorkflowDiscoveryBrowserClient {
   start(): Promise<void>;
@@ -478,21 +478,100 @@ export class McpPlaywrightClient implements WorkflowDiscoveryBrowserClient {
   }
 }
 
-let mcpClientCtorPromise: Promise<McpClientConstructor | null> | null = null;
-async function loadMcpClientConstructor(): Promise<McpClientConstructor> {
-  if (!mcpClientCtorPromise) {
-    // Use type assertion to bypass TypeScript module resolution check for dynamic import
-    // The actual import will work at runtime with the package's exports configuration
-    mcpClientCtorPromise = import('@modelcontextprotocol/sdk/client' as any)
-      .then(mod => (mod as any).Client || (mod as any).default || null)
-      .catch((err) => {
-        console.error('[McpPlaywrightClient] Failed to import @modelcontextprotocol/sdk/client:', err.message);
-        return null;
+/**
+ * Adapter class that wraps the official @modelcontextprotocol/sdk Client
+ * to match the McpClient interface expected by pixeldust
+ */
+class McpClientAdapter implements McpClient {
+  private client: any;
+  private transport: any;
+  private connected: boolean = false;
+
+  constructor(private options: McpClientOptions) {}
+
+  private async ensureConnected(): Promise<void> {
+    if (this.connected) return;
+
+    // Dynamically import the SDK modules
+    const [clientMod, transportMod] = await Promise.all([
+      import('@modelcontextprotocol/sdk/client' as any).catch((err) => {
+        throw new Error(`Failed to import MCP SDK client: ${err.message}`);
+      }),
+      import('@modelcontextprotocol/sdk/client' as any).catch((err) => {
+        throw new Error(`Failed to import MCP SDK transport: ${err.message}`);
+      })
+    ]);
+
+    const Client = clientMod.Client;
+    const StreamableHTTPClientTransport = transportMod.StreamableHTTPClientTransport;
+
+    if (!Client || !StreamableHTTPClientTransport) {
+      throw new Error('The @modelcontextprotocol/sdk package is not available. Install it to use the MCP driver.');
+    }
+
+    // Create the transport with the URL and options
+    const transportUrl = new URL(this.options.url);
+    const transportOptions: any = {};
+
+    if (this.options.headers) {
+      transportOptions.requestInit = { headers: this.options.headers };
+    }
+
+    this.transport = new StreamableHTTPClientTransport(transportUrl, transportOptions);
+
+    // Create the client
+    this.client = new Client(
+      {
+        name: 'pixeldust-workflow-discovery',
+        version: '1.0.0'
+      },
+      {
+        capabilities: {}
+      }
+    );
+
+    // Connect the client to the transport
+    await this.client.connect(this.transport);
+    this.connected = true;
+  }
+
+  async callTool(request: McpToolCallRequest): Promise<McpToolResponse> {
+    await this.ensureConnected();
+
+    try {
+      const result = await this.client.callTool({
+        name: request.name,
+        arguments: request.arguments || {}
       });
+
+      // Transform the SDK response to match McpToolResponse interface
+      return {
+        data: result,
+        output: result,
+        result: result,
+        content: result.content,
+        artifacts: result.content?.map((item: any) => ({
+          type: item.type === 'text' ? 'text' : 'json',
+          text: item.text,
+          data: item.data,
+          mimeType: item.mimeType
+        }))
+      };
+    } catch (error: any) {
+      return {
+        error: { message: error.message || String(error) }
+      };
+    }
   }
-  const ctor = await mcpClientCtorPromise;
-  if (!ctor) {
-    throw new Error('The @modelcontextprotocol/sdk package is not available. Install it to use the MCP driver.');
+
+  async close(): Promise<void> {
+    if (this.transport) {
+      await this.transport.close();
+    }
+    this.connected = false;
   }
-  return ctor as McpClientConstructor;
+}
+
+async function loadMcpClientConstructor(): Promise<McpClientConstructor> {
+  return McpClientAdapter as any;
 }
