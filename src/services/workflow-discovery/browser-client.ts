@@ -481,9 +481,14 @@ export class McpPlaywrightClient implements WorkflowDiscoveryBrowserClient {
 let mcpClientCtorPromise: Promise<McpClientConstructor | null> | null = null;
 async function loadMcpClientConstructor(): Promise<McpClientConstructor> {
   if (!mcpClientCtorPromise) {
-    mcpClientCtorPromise = import('@modelcontextprotocol/sdk')
-      .then(mod => (mod as any).McpClient || (mod as any).default || null)
-      .catch(() => null);
+    // Use type assertion to bypass TypeScript module resolution check for dynamic import
+    // The actual import will work at runtime with the package's exports configuration
+    mcpClientCtorPromise = import('@modelcontextprotocol/sdk/client' as any)
+      .then(mod => (mod as any).Client || (mod as any).default || null)
+      .catch((err) => {
+        console.error('[McpPlaywrightClient] Failed to import @modelcontextprotocol/sdk/client:', err.message);
+        return null;
+      });
   }
   const ctor = await mcpClientCtorPromise;
   if (!ctor) {
