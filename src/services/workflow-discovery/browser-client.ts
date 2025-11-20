@@ -22,6 +22,8 @@ export interface LocalPlaywrightClientOptions {
   postNavigationDelayMs?: number;
 }
 
+export type McpServerType = 'custom' | 'playwright-mcp';
+
 export interface WorkflowDiscoveryMcpClientOptions {
   endpoint: string;
   timeoutMs?: number;
@@ -30,6 +32,7 @@ export interface WorkflowDiscoveryMcpClientOptions {
     username?: string;
     password?: string;
   };
+  serverType?: McpServerType;
   tools?: Partial<McpToolNames>;
 }
 
@@ -57,6 +60,23 @@ const DEFAULT_MCP_TOOL_NAMES: McpToolNames = {
   screenshot: 'page.screenshot',
   console: 'page.consoleLogs',
   close: 'page.close',
+};
+
+/**
+ * Tool names for the official @playwright/mcp server
+ * See: https://github.com/microsoft/playwright-mcp
+ */
+const PLAYWRIGHT_MCP_TOOL_NAMES: McpToolNames = {
+  start: 'browser_navigate', // Navigate starts a browser session in playwright-mcp
+  goto: 'browser_navigate',
+  snapshot: 'browser_snapshot',
+  metadata: 'browser_snapshot', // Metadata is extracted from snapshot
+  components: 'browser_snapshot', // Components extracted from accessibility tree
+  interactive: 'browser_snapshot', // Interactive elements from accessibility tree
+  links: 'browser_snapshot', // Links extracted from snapshot
+  screenshot: 'browser_screenshot',
+  console: 'browser_console_logs', // Custom handling needed
+  close: 'browser_close',
 };
 
 export class LocalPlaywrightClient implements WorkflowDiscoveryBrowserClient {
@@ -274,10 +294,20 @@ export class McpPlaywrightClient implements WorkflowDiscoveryBrowserClient {
   private client: McpClient | null = null;
   private sessionId?: string;
   private readonly toolNames: McpToolNames;
+  private readonly serverType: McpServerType;
   private logger = new Logger('McpPlaywrightClient');
 
   constructor(private readonly options: WorkflowDiscoveryMcpClientOptions) {
-    this.toolNames = { ...DEFAULT_MCP_TOOL_NAMES, ...(options.tools || {}) };
+    this.serverType = options.serverType || 'custom';
+
+    // Use official playwright-mcp tool names if specified, otherwise use custom/default names
+    const baseToolNames = this.serverType === 'playwright-mcp'
+      ? PLAYWRIGHT_MCP_TOOL_NAMES
+      : DEFAULT_MCP_TOOL_NAMES;
+
+    this.toolNames = { ...baseToolNames, ...(options.tools || {}) };
+
+    this.logger.info(`Initialized MCP client with server type: ${this.serverType}`);
   }
 
   async start(): Promise<void> {
