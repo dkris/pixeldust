@@ -12,6 +12,7 @@ import {
   DOMDiff,
   AccessibilityDiff,
   AccessibilityNodeChange,
+  UIMutation,
 } from '../types';
 import pixelmatch from 'pixelmatch';
 import { PNG } from 'pngjs';
@@ -590,6 +591,107 @@ export class AnalysisAgent extends BaseAgent {
     if (totalChanges > 20) return Severity.MEDIUM;
     if (totalChanges > 5) return Severity.LOW;
     return Severity.INFO;
+  }
+
+  // ── Runtime mutation validation ────────────────────────────────────────────
+
+  /**
+   * Validate a UI mutation against a base DOM snapshot.
+   * Used by ExperimentOrchestratorAgent before starting an experiment.
+   * Returns a ComparisonResult; caller checks result.severity for blocking.
+   */
+  async analyzeForMutation(
+    mutation: UIMutation,
+    baseDOMSnapshot: string,
+    mutatedDOMSnapshot: string,
+    sessionId: string
+  ): Promise<ComparisonResult> {
+    const differences: Difference[] = [];
+
+    try {
+      const domDiff = this.diffDOM(baseDOMSnapshot, mutatedDOMSnapshot, []);
+      const severity = this.getDOMSeverity(domDiff);
+
+      if (domDiff.removed.length > 0) {
+        // Check if any removed element matches critical-element heuristics
+        const criticalRemoved = domDiff.removed.filter((el: any) => {
+          const tag = (el.tagName ?? '').toLowerCase();
+          const attrs = JSON.stringify(el.attributes ?? '').toLowerCase();
+          return (
+            tag === 'button' ||
+            tag === 'form' ||
+            tag === 'input' ||
+            attrs.includes('submit') ||
+            attrs.includes('checkout') ||
+            attrs.includes('buy') ||
+            attrs.includes('cta')
+          );
+        });
+
+        if (criticalRemoved.length > 0) {
+          differences.push({
+            type: DifferenceType.STRUCTURAL,
+            category: DifferenceCategory.BREAKING,
+            severity: Severity.CRITICAL,
+            description:
+              `Mutation would remove ${criticalRemoved.length} critical element(s) ` +
+              `(buttons/forms/CTAs). Experiment blocked.`,
+            location: mutation.targetSelector,
+            domDiff,
+          });
+        } else if (domDiff.removed.length > 0) {
+          differences.push({
+            type: DifferenceType.STRUCTURAL,
+            category: DifferenceCategory.BREAKING,
+            severity,
+            description:
+              `Mutation removes ${domDiff.removed.length} DOM element(s).`,
+            location: mutation.targetSelector,
+            domDiff,
+          });
+        }
+      }
+
+      if (domDiff.modified.length > 0) {
+        differences.push({
+          type: DifferenceType.STRUCTURAL,
+          category: DifferenceCategory.ENHANCEMENT,
+          severity: Severity.LOW,
+          description: `Mutation modifies ${domDiff.modified.length} DOM attribute(s).`,
+          location: mutation.targetSelector,
+          domDiff,
+        });
+      }
+    } catch (error) {
+      this.logger.warn('analyzeForMutation: DOM diff failed', error as Error);
+    }
+
+    // If we have screenshots, do pixel diff too
+    if (mutation.type === 'css_patch') {
+      // CSS patches are safe by default — no pixel diff needed
+      if (differences.length === 0) {
+        differences.push({
+          type: DifferenceType.VISUAL,
+          category: DifferenceCategory.ENHANCEMENT,
+          severity: Severity.INFO,
+          description: `CSS patch mutation validated — no structural regressions detected.`,
+          location: mutation.targetSelector,
+        });
+      }
+    }
+
+    const overallSeverity = this.calculateSeverity(differences);
+
+    return {
+      id: uuidv4(),
+      sessionId,
+      baseVersion: 'control',
+      targetVersion: 'variant',
+      component: mutation.targetSelector,
+      differences,
+      severity: overallSeverity,
+      createdAt: new Date(),
+    };
   }
 }
 

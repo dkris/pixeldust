@@ -23,6 +23,7 @@ export interface Config {
   orchestration?: OrchestrationConfig;
   workflowDiscovery?: WorkflowDiscoveryConfig;
   forceRegenerateTests?: boolean;
+  runtime?: RuntimeConfig;
 }
 
 export interface OrchestrationConfig {
@@ -872,6 +873,217 @@ export enum EventType {
   APPROVAL_RECEIVED = 'APPROVAL_RECEIVED',
   SESSION_COMPLETED = 'SESSION_COMPLETED',
   SESSION_ERROR = 'SESSION_ERROR',
+}
+
+// ============================================================================
+// Runtime / App Immune System — New SessionStates
+// ============================================================================
+
+// Append to SessionState (runtime pipeline states used by ExperimentOrchestratorAgent)
+// These do NOT replace existing states; they extend the enum conceptually.
+// Because TypeScript enums can't be extended, we provide a parallel const object
+// that downstream runtime agents use for their internal state tracking.
+export const RuntimeSessionState = {
+  INGESTING: 'INGESTING',
+  FRICTION_ANALYSIS: 'FRICTION_ANALYSIS',
+  MUTATION_PROPOSAL: 'MUTATION_PROPOSAL',
+  MUTATION_VALIDATION: 'MUTATION_VALIDATION',
+  EXPERIMENT_RUNNING: 'EXPERIMENT_RUNNING',
+  EXPERIMENT_ANALYSIS: 'EXPERIMENT_ANALYSIS',
+  PROMOTING: 'PROMOTING',
+  REVERTING: 'REVERTING',
+} as const;
+
+export type RuntimeSessionStateValue = typeof RuntimeSessionState[keyof typeof RuntimeSessionState];
+
+// ============================================================================
+// Runtime / App Immune System — New AgentTypes
+// ============================================================================
+
+export enum RuntimeAgentType {
+  FRICTION_DETECTION = 'FRICTION_DETECTION',
+  MUTATION_PROPOSAL = 'MUTATION_PROPOSAL',
+  EXPERIMENT_ORCHESTRATOR = 'EXPERIMENT_ORCHESTRATOR',
+  EXPERIMENT_OUTCOME = 'EXPERIMENT_OUTCOME',
+}
+
+// ============================================================================
+// Runtime / App Immune System — Telemetry Types
+// ============================================================================
+
+export type FrictionSignalType =
+  | 'rage_click'
+  | 'dead_click'
+  | 'form_abandonment'
+  | 'error_click'
+  | 'scroll_depth_low'
+  | 'rapid_navigation'
+  | 'repeated_interaction'
+  | 'js_error'
+  | 'slow_interaction';
+
+export type SessionEventType =
+  | FrictionSignalType
+  | 'click'
+  | 'input'
+  | 'scroll'
+  | 'navigation'
+  | 'form_submit'
+  | 'page_load'
+  | 'js_error'
+  | 'network_error';
+
+export interface SessionEvent {
+  id: string;
+  userSessionId: string;
+  type: SessionEventType;
+  timestamp: number;       // epoch ms, set by browser
+  receivedAt: number;      // epoch ms, set by server
+  url: string;
+  selector?: string;
+  elementText?: string;
+  position?: { x: number; y: number };
+  viewport?: { width: number; height: number };
+  value?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface UserSession {
+  id: string;
+  appId: string;
+  cohortId?: string;
+  startedAt: number;
+  lastSeenAt: number;
+  pageUrl: string;
+  userAgent: string;
+  metadata?: Record<string, any>;
+}
+
+export interface FrictionSignal {
+  id: string;
+  userSessionId: string;
+  appId: string;
+  type: FrictionSignalType;
+  url: string;
+  selector?: string;
+  elementText?: string;
+  count: number;
+  severity: Severity;   // reuses existing Severity enum
+  context?: Record<string, any>;
+  detectedAt: number;
+}
+
+// ============================================================================
+// Runtime / App Immune System — Mutation & Experiment Types
+// ============================================================================
+
+export type MutationType =
+  | 'css_patch'
+  | 'dom_attribute'
+  | 'component_swap'
+  | 'flow_redirect'
+  | 'copy_change'
+  | 'layout_change';
+
+export interface UIMutation {
+  id: string;
+  experimentId: string;
+  type: MutationType;
+  targetSelector: string;
+  cssRule?: string;
+  attributeChanges?: Record<string, string>;
+  newContent?: string;
+  script?: string;
+  description: string;
+  generatedBy: 'claude' | 'manual';
+  confidence: number;   // 0-1
+  frictionSignalId: string;
+  createdAt: number;
+}
+
+export type ExperimentStatus =
+  | 'DRAFT'
+  | 'RUNNING'
+  | 'PAUSED'
+  | 'PROMOTED'
+  | 'REVERTED'
+  | 'COMPLETED';
+
+export interface Experiment {
+  id: string;
+  appId: string;
+  frictionSignalId: string;
+  mutations: UIMutation[];
+  status: ExperimentStatus;
+  trafficPercent: number;
+  controlCohortId: string;
+  variantCohortId: string;
+  minConfidenceThreshold: number;
+  minSampleSize: number;
+  autoPromote: boolean;
+  autoRevert: boolean;
+  startedAt?: number;
+  endedAt?: number;
+  promotedAt?: number;
+  revertedAt?: number;
+  description: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ExperimentOutcome {
+  id: string;
+  experimentId: string;
+  measuredAt: number;
+  controlSessions: number;
+  controlTaskCompletionRate: number;
+  controlErrorRate: number;
+  controlAbandonmentRate: number;
+  controlAvgSessionDuration: number;
+  variantSessions: number;
+  variantTaskCompletionRate: number;
+  variantErrorRate: number;
+  variantAbandonmentRate: number;
+  variantAvgSessionDuration: number;
+  confidenceScore: number;
+  pValue?: number;
+  uplift: number;
+  decision: 'promote' | 'revert' | 'continue' | 'insufficient_data';
+  decisionReason: string;
+}
+
+export interface CohortAssignment {
+  userSessionId: string;
+  experimentId: string;
+  cohortId: string;   // 'control' or 'variant'
+  assignedAt: number;
+}
+
+// ============================================================================
+// Runtime / App Immune System — Config Types
+// ============================================================================
+
+export interface RuntimeConfig {
+  enabled: boolean;
+  appId: string;
+  ingestEndpoint?: string;
+  sdkVersion: string;
+  trafficSampling: number;
+  frictionThreshold: {
+    rageClicks: number;
+    formAbandonmentMinFields: number;
+    errorClickCount: number;
+  };
+  experiment: {
+    defaultTrafficPercent: number;
+    minConfidenceThreshold: number;
+    minSampleSize: number;
+    maxConcurrentExperiments: number;
+    autoPromote: boolean;
+    autoRevert: boolean;
+    pollIntervalMs: number;
+  };
+  visualValidation: boolean;
 }
 
 // ============================================================================

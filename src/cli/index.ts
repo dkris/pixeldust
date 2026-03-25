@@ -1073,4 +1073,218 @@ async function runStateMachine(
   }
 }
 
+// ── Runtime commands ──────────────────────────────────────────────────────────
+
+program
+  .command('watch')
+  .description('Start the runtime server: event ingest, friction detection, experiment lifecycle, dashboard')
+  .option('--app-id <id>', 'Application ID to monitor', 'default')
+  .option('--port <n>', 'HTTP port', '3000')
+  .option('--config <path>', 'Path to config file')
+  .option('--dashboard', 'Open dashboard in browser after startup')
+  .action(async (opts) => {
+    const spinner = ora('Starting Pixeldust watch mode…').start();
+    try {
+      const configLoader = new ConfigLoader();
+      const config = await configLoader.load(opts.config);
+
+      const db = new DatabaseManager();
+
+      const eventBus = new EventBus();
+      const runtimeConfig = (config as any).runtime ?? {
+        enabled: true,
+        appId: opts.appId,
+        ingestEndpoint: `http://localhost:${opts.port}/api/sdk/ingest`,
+        sdkVersion: '1.0.0',
+        trafficSampling: 0.1,
+        frictionThreshold: { rageClicks: 3, formAbandonmentMinFields: 1, errorClickCount: 2 },
+        experiment: {
+          defaultTrafficPercent: 10, minConfidenceThreshold: 0.95,
+          minSampleSize: 100, maxConcurrentExperiments: 5,
+          autoPromote: false, autoRevert: true, pollIntervalMs: 60000,
+        },
+        visualValidation: true,
+      };
+
+      runtimeConfig.appId = opts.appId;
+
+      const { ExperimentOrchestratorAgent } = await import('../agents/experiment-orchestrator-agent');
+      const orchestrator = new ExperimentOrchestratorAgent(db, eventBus, runtimeConfig);
+      orchestrator.startWatchMode();
+
+      const port = parseInt(opts.port, 10);
+      const server = new WebServer(db, port, { eventBus, runtimeConfig });
+      await server.start();
+
+      spinner.succeed(`Watch mode active on http://localhost:${port}`);
+      logger.info(`Dashboard: http://localhost:${port}/dashboard?appId=${opts.appId}`);
+
+      if (opts.dashboard) {
+        await open(`http://localhost:${port}/dashboard?appId=${opts.appId}`);
+      }
+
+      process.on('SIGINT', async () => {
+        orchestrator.stopWatchMode();
+        process.exit(0);
+      });
+    } catch (err) {
+      spinner.fail('Failed to start watch mode');
+      logger.error('Watch mode error', err as Error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('experiments')
+  .description('List experiments with confidence scores and uplift')
+  .option('--app-id <id>', 'Application ID', 'default')
+  .option('--status <status>', 'Filter by status (RUNNING, PROMOTED, REVERTED, DRAFT)')
+  .option('--format <fmt>', 'Output format: table or json', 'table')
+  .action(async (opts) => {
+    try {
+      const db = new DatabaseManager();
+      const experiments = db.getExperiments(opts.appId, opts.status);
+
+      if (opts.format === 'json') {
+        console.log(JSON.stringify(experiments, null, 2));
+        return;
+      }
+
+      if (experiments.length === 0) {
+        console.log(`No experiments found for app "${opts.appId}".`);
+        return;
+      }
+
+      const header = ['ID', 'Status', 'Confidence', 'Uplift', 'Control', 'Variant', 'Decision'];
+      const rows = experiments.map(exp => {
+        const outcome = db.getLatestExperimentOutcome(exp.id);
+        return [
+          exp.id.slice(0, 8),
+          exp.status,
+          outcome ? `${(outcome.confidenceScore * 100).toFixed(0)}%` : '—',
+          outcome ? `${(outcome.uplift * 100).toFixed(1)}%` : '—',
+          outcome ? String(outcome.controlSessions) : '—',
+          outcome ? String(outcome.variantSessions) : '—',
+          outcome ? outcome.decision : '—',
+        ];
+      });
+
+      const widths = header.map((h, i) =>
+        Math.max(h.length, ...rows.map(r => r[i].length))
+      );
+      const fmt = (row: string[]) =>
+        row.map((cell, i) => cell.padEnd(widths[i])).join('  ');
+
+      console.log('\n' + fmt(header));
+      console.log(widths.map(w => '─'.repeat(w)).join('  '));
+      rows.forEach(r => console.log(fmt(r)));
+      console.log();
+    } catch (err) {
+      logger.error('Failed to list experiments', err as Error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('promote <experiment-id>')
+  .description('Manually promote an experiment to 100% traffic')
+  .requiredOption('--reason <text>', 'Reason for manual promotion')
+  .option('--force', 'Skip confirmation prompt')
+  .action(async (experimentId, opts) => {
+    try {
+      const db = new DatabaseManager();
+      const exp = db.getExperiment(experimentId);
+      if (!exp) { console.error(`Experiment ${experimentId} not found.`); process.exit(1); }
+      if (!opts.force) {
+        const readline = await import('readline');
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        await new Promise<void>(resolve => {
+          rl.question(`Promote experiment ${experimentId}? (y/N) `, ans => {
+            rl.close();
+            if (ans.toLowerCase() !== 'y') { console.log('Aborted.'); process.exit(0); }
+            resolve();
+          });
+        });
+      }
+      db.updateExperimentStatus(experimentId, 'PROMOTED', { promotedAt: Date.now() });
+      console.log(`Experiment ${experimentId} promoted. Reason: ${opts.reason}`);
+    } catch (err) {
+      logger.error('Failed to promote experiment', err as Error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('revert <experiment-id>')
+  .description('Revert an experiment to baseline')
+  .requiredOption('--reason <text>', 'Reason for revert')
+  .option('--immediate', 'Skip confirmation prompt')
+  .action(async (experimentId, opts) => {
+    try {
+      const db = new DatabaseManager();
+      const exp = db.getExperiment(experimentId);
+      if (!exp) { console.error(`Experiment ${experimentId} not found.`); process.exit(1); }
+      if (!opts.immediate) {
+        const readline = await import('readline');
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        await new Promise<void>(resolve => {
+          rl.question(`Revert experiment ${experimentId}? (y/N) `, ans => {
+            rl.close();
+            if (ans.toLowerCase() !== 'y') { console.log('Aborted.'); process.exit(0); }
+            resolve();
+          });
+        });
+      }
+      db.updateExperimentStatus(experimentId, 'REVERTED', { revertedAt: Date.now() });
+      console.log(`Experiment ${experimentId} reverted. Reason: ${opts.reason}`);
+    } catch (err) {
+      logger.error('Failed to revert experiment', err as Error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('friction')
+  .description('Show detected friction signals and associated experiments')
+  .option('--app-id <id>', 'Application ID', 'default')
+  .option('--since <hours>', 'Look back N hours', '24')
+  .option('--severity <level>', 'Filter by severity (CRITICAL, HIGH, MEDIUM, LOW)')
+  .action(async (opts) => {
+    try {
+      const db = new DatabaseManager();
+      const sinceMs = Date.now() - parseInt(opts.since, 10) * 60 * 60 * 1000;
+      let signals = db.getFrictionSignals(opts.appId, sinceMs);
+      if (opts.severity) {
+        signals = signals.filter((s: any) => s.severity.toUpperCase() === opts.severity.toUpperCase());
+      }
+
+      if (signals.length === 0) {
+        console.log(`No friction signals in the last ${opts.since} hours.`);
+        return;
+      }
+
+      const header = ['Type', 'Severity', 'URL', 'Count', 'Detected'];
+      const rows = signals.map((s: any) => [
+        s.type,
+        s.severity,
+        s.url.slice(0, 50),
+        String(s.count),
+        new Date(s.detectedAt).toLocaleString(),
+      ]);
+      const widths = header.map((h, i) =>
+        Math.max(h.length, ...rows.map((r: string[]) => r[i].length))
+      );
+      const fmt = (row: string[]) =>
+        row.map((cell, i) => cell.padEnd(widths[i])).join('  ');
+
+      console.log('\n' + fmt(header));
+      console.log(widths.map(w => '─'.repeat(w)).join('  '));
+      rows.forEach((r: string[]) => console.log(fmt(r)));
+      console.log(`\n${signals.length} signal(s) found.\n`);
+    } catch (err) {
+      logger.error('Failed to list friction signals', err as Error);
+      process.exit(1);
+    }
+  });
+
 program.parse();

@@ -129,6 +129,34 @@ const ConfigSchema = z.object({
     })
     .default({ mode: 'hybrid', usePipeline: true }),
   workflowDiscovery: WorkflowDiscoverySchema,
+  runtime: z
+    .object({
+      enabled: z.boolean().default(false),
+      appId: z.string(),
+      ingestEndpoint: z.string().url().optional(),
+      sdkVersion: z.string().default('1.0.0'),
+      trafficSampling: z.number().min(0).max(1).default(0.1),
+      frictionThreshold: z
+        .object({
+          rageClicks: z.number().default(3),
+          formAbandonmentMinFields: z.number().default(2),
+          errorClickCount: z.number().default(2),
+        })
+        .default({ rageClicks: 3, formAbandonmentMinFields: 2, errorClickCount: 2 }),
+      experiment: z
+        .object({
+          defaultTrafficPercent: z.number().min(1).max(50).default(10),
+          minConfidenceThreshold: z.number().min(0.5).max(0.999).default(0.95),
+          minSampleSize: z.number().default(100),
+          maxConcurrentExperiments: z.number().default(5),
+          autoPromote: z.boolean().default(false),
+          autoRevert: z.boolean().default(true),
+          pollIntervalMs: z.number().default(60000),
+        })
+        .default({}),
+      visualValidation: z.boolean().default(true),
+    })
+    .optional(),
 });
 
 /**

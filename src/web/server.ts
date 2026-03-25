@@ -4,6 +4,9 @@ import path from 'path';
 import { DatabaseManager } from '../storage/database';
 import Logger from '../utils/logger';
 import { readFileSync, existsSync } from 'fs';
+import { EventBus } from '../core/event-bus';
+import { SessionIngestService } from '../runtime/session-ingest';
+import { RuntimeConfig } from '../types';
 
 /**
  * Web Server for Diff Viewer
@@ -21,14 +24,26 @@ export class WebServer {
   private logger: Logger;
   private port: number;
   private server: any;
+  private ingestService?: SessionIngestService;
 
-  constructor(db: DatabaseManager, port: number = 3000) {
+  constructor(
+    db: DatabaseManager,
+    port: number = 3000,
+    options?: { eventBus?: EventBus; runtimeConfig?: RuntimeConfig }
+  ) {
     this.app = express();
     this.db = db;
     this.logger = new Logger('WEB_SERVER');
     this.port = port;
     this.setupMiddleware();
     this.setupRoutes();
+
+    if (options?.eventBus && options?.runtimeConfig) {
+      this.ingestService = new SessionIngestService(
+        db, options.eventBus, options.runtimeConfig
+      );
+      this.setupRuntimeRoutes();
+    }
   }
 
   private setupMiddleware(): void {
@@ -178,6 +193,198 @@ export class WebServer {
     } catch (error) {
       this.logger.error('Failed to get screenshot', error as Error);
       res.status(500).json({ error: 'Failed to retrieve screenshot' });
+    }
+  }
+
+  // ============================================================================
+  // Runtime / App Immune System Routes
+  // ============================================================================
+
+  private setupRuntimeRoutes(): void {
+    // SDK Ingest
+    this.app.post('/api/sdk/session', this.sdkSession.bind(this));
+    this.app.post('/api/sdk/ingest', this.sdkIngest.bind(this));
+
+    // Experiment management
+    this.app.get('/api/experiments', this.getExperiments.bind(this));
+    this.app.get('/api/experiments/:experimentId', this.getExperiment.bind(this));
+    this.app.get('/api/experiments/:experimentId/outcomes', this.getExperimentOutcomes.bind(this));
+    this.app.post('/api/experiments/:experimentId/promote', this.promoteExperiment.bind(this));
+    this.app.post('/api/experiments/:experimentId/revert', this.revertExperiment.bind(this));
+    this.app.post('/api/experiments/:experimentId/pause', this.pauseExperiment.bind(this));
+    this.app.patch('/api/experiments/:experimentId', this.updateExperiment.bind(this));
+
+    // Friction signals
+    this.app.get('/api/friction', this.getFrictionSignals.bind(this));
+    this.app.get('/api/friction/:signalId', this.getFrictionSignal.bind(this));
+
+    // Dashboard
+    this.app.get('/dashboard', this.serveDashboard.bind(this));
+    this.app.get('/api/dashboard/summary', this.getDashboardSummary.bind(this));
+
+    this.logger.info('Runtime routes registered');
+  }
+
+  private async sdkSession(req: Request, res: Response): Promise<void> {
+    try {
+      if (!this.ingestService) {
+        res.status(503).json({ error: 'Runtime mode not enabled' });
+        return;
+      }
+      const result = this.ingestService.registerSession(req.body);
+      res.json(result);
+    } catch (error) {
+      this.logger.error('SDK session registration failed', error as Error);
+      res.status(500).json({ error: 'Session registration failed' });
+    }
+  }
+
+  private async sdkIngest(req: Request, res: Response): Promise<void> {
+    try {
+      if (!this.ingestService) {
+        res.status(503).json({ error: 'Runtime mode not enabled' });
+        return;
+      }
+      const result = await this.ingestService.ingest(req.body);
+      res.json(result);
+    } catch (error) {
+      this.logger.error('SDK ingest failed', error as Error);
+      res.status(500).json({ error: 'Ingest failed' });
+    }
+  }
+
+  private getExperiments(req: Request, res: Response): void {
+    try {
+      const { appId, status } = req.query as { appId: string; status?: string };
+      if (!appId) { res.status(400).json({ error: 'appId is required' }); return; }
+      const experiments = this.db.getExperiments(appId, status);
+      // Hydrate mutations for each experiment
+      const hydrated = experiments.map(e => ({
+        ...e,
+        mutations: this.db.getUIMutations(e.id),
+        latestOutcome: this.db.getLatestExperimentOutcome(e.id),
+      }));
+      res.json(hydrated);
+    } catch (error) {
+      this.logger.error('Failed to get experiments', error as Error);
+      res.status(500).json({ error: 'Failed to retrieve experiments' });
+    }
+  }
+
+  private getExperiment(req: Request, res: Response): void {
+    try {
+      const exp = this.db.getExperiment(req.params.experimentId);
+      if (!exp) { res.status(404).json({ error: 'Experiment not found' }); return; }
+      res.json({
+        ...exp,
+        mutations: this.db.getUIMutations(exp.id),
+        latestOutcome: this.db.getLatestExperimentOutcome(exp.id),
+      });
+    } catch (error) {
+      this.logger.error('Failed to get experiment', error as Error);
+      res.status(500).json({ error: 'Failed to retrieve experiment' });
+    }
+  }
+
+  private getExperimentOutcomes(req: Request, res: Response): void {
+    try {
+      const outcomes = this.db.getExperimentOutcomes(req.params.experimentId);
+      res.json(outcomes);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to retrieve outcomes' });
+    }
+  }
+
+  private promoteExperiment(req: Request, res: Response): void {
+    try {
+      const { experimentId } = req.params;
+      const exp = this.db.getExperiment(experimentId);
+      if (!exp) { res.status(404).json({ error: 'Experiment not found' }); return; }
+      this.db.updateExperimentStatus(experimentId, 'PROMOTED', { promotedAt: Date.now() });
+      this.logger.info(`Experiment ${experimentId} manually promoted`);
+      res.json({ status: 'PROMOTED', experimentId });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to promote experiment' });
+    }
+  }
+
+  private revertExperiment(req: Request, res: Response): void {
+    try {
+      const { experimentId } = req.params;
+      const exp = this.db.getExperiment(experimentId);
+      if (!exp) { res.status(404).json({ error: 'Experiment not found' }); return; }
+      this.db.updateExperimentStatus(experimentId, 'REVERTED', { revertedAt: Date.now() });
+      this.logger.info(`Experiment ${experimentId} manually reverted`);
+      res.json({ status: 'REVERTED', experimentId });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to revert experiment' });
+    }
+  }
+
+  private pauseExperiment(req: Request, res: Response): void {
+    try {
+      const { experimentId } = req.params;
+      this.db.updateExperimentStatus(experimentId, 'PAUSED');
+      res.json({ status: 'PAUSED', experimentId });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to pause experiment' });
+    }
+  }
+
+  private updateExperiment(req: Request, res: Response): void {
+    try {
+      const { experimentId } = req.params;
+      this.db.updateExperimentConfig(experimentId, req.body);
+      res.json({ updated: true, experimentId });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to update experiment' });
+    }
+  }
+
+  private getFrictionSignals(req: Request, res: Response): void {
+    try {
+      const { appId, since } = req.query as { appId: string; since?: string };
+      if (!appId) { res.status(400).json({ error: 'appId is required' }); return; }
+      const sinceMs = since ? parseInt(since, 10) : undefined;
+      res.json(this.db.getFrictionSignals(appId, sinceMs));
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to retrieve friction signals' });
+    }
+  }
+
+  private getFrictionSignal(req: Request, res: Response): void {
+    try {
+      const signal = this.db.getFrictionSignal(req.params.signalId);
+      if (!signal) { res.status(404).json({ error: 'Signal not found' }); return; }
+      const experiments = this.db.getExperiments(signal.appId).filter(
+        e => e.frictionSignalId === signal.id
+      );
+      res.json({ ...signal, experiments });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to retrieve friction signal' });
+    }
+  }
+
+  private getDashboardSummary(req: Request, res: Response): void {
+    try {
+      const { appId } = req.query as { appId: string };
+      if (!appId) { res.status(400).json({ error: 'appId is required' }); return; }
+      res.json(this.db.getDashboardSummary(appId));
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to retrieve dashboard summary' });
+    }
+  }
+
+  private serveDashboard(req: Request, res: Response): void {
+    try {
+      const appId = (req.query.appId as string) || 'default';
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { generateDashboardHTML } = require('./dashboard');
+      res.setHeader('Content-Type', 'text/html');
+      res.send(generateDashboardHTML(appId));
+    } catch {
+      res.setHeader('Content-Type', 'text/html');
+      res.send('<html><body><h1>PixelDust Dashboard</h1><p>Dashboard coming soon.</p></body></html>');
     }
   }
 
