@@ -14,6 +14,7 @@ import {
   ConfigSuggestion,
   TestCategory,
   SessionState,
+  ExperimentOutcome,
 } from '../types';
 import { DatabaseManager } from '../storage/database';
 import Anthropic from '@anthropic-ai/sdk';
@@ -504,6 +505,81 @@ Return ONLY valid JSON, no markdown or explanations.`;
       promptImprovements: [],
       configSuggestions: [],
     };
+  }
+
+  // ── Runtime experiment evaluation ─────────────────────────────────────────
+
+  /**
+   * Evaluate an experiment outcome and return a promote/revert/continue decision.
+   * Called by ExperimentOrchestratorAgent after outcome metrics are computed.
+   */
+  async evaluateExperiment(
+    outcome: ExperimentOutcome,
+    modelId?: string
+  ): Promise<{
+    decision: 'promote' | 'revert' | 'continue';
+    confidence: number;
+    reason: string;
+  }> {
+    const prompt = `You are an A/B experiment analyst. Evaluate this experiment outcome and decide whether to promote, revert, or continue collecting data.
+
+Experiment Outcome:
+- Control sessions: ${outcome.controlSessions}
+- Variant sessions: ${outcome.variantSessions}
+- Control task completion rate: ${(outcome.controlTaskCompletionRate * 100).toFixed(1)}%
+- Variant task completion rate: ${(outcome.variantTaskCompletionRate * 100).toFixed(1)}%
+- Control error rate: ${(outcome.controlErrorRate * 100).toFixed(1)}%
+- Variant error rate: ${(outcome.variantErrorRate * 100).toFixed(1)}%
+- Control abandonment rate: ${(outcome.controlAbandonmentRate * 100).toFixed(1)}%
+- Variant abandonment rate: ${(outcome.variantAbandonmentRate * 100).toFixed(1)}%
+- Bayesian confidence (variant > control): ${(outcome.confidenceScore * 100).toFixed(1)}%
+- Uplift: ${(outcome.uplift * 100).toFixed(1)}%
+- Statistical decision: ${outcome.decision}
+
+Rules:
+- "promote" if confidence >= 95% AND uplift > 0% AND no significant error rate increase
+- "revert" if confidence >= 90% AND uplift < -5% OR error rate increased > 50%
+- "continue" otherwise (not enough data or unclear result)
+
+Respond with ONLY valid JSON:
+{"decision": "promote"|"revert"|"continue", "confidence": 0.0-1.0, "reason": "one sentence"}`;
+
+    try {
+      const response = await this.ai.messages.create({
+        model: modelId ?? 'claude-haiku-4-5-20251001',
+        max_tokens: 256,
+        temperature: 0.1,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const content = response.content[0];
+      if (content.type !== 'text') throw new Error('Unexpected response type');
+
+      let jsonText = content.text.trim();
+      if (jsonText.startsWith('```')) {
+        const m = jsonText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (m) jsonText = m[1];
+      }
+
+      const parsed = JSON.parse(jsonText);
+      const decision = ['promote', 'revert', 'continue'].includes(parsed.decision)
+        ? parsed.decision as 'promote' | 'revert' | 'continue'
+        : outcome.decision === 'insufficient_data' ? 'continue' : outcome.decision as any;
+
+      return {
+        decision,
+        confidence: typeof parsed.confidence === 'number' ? parsed.confidence : outcome.confidenceScore,
+        reason: parsed.reason ?? outcome.decisionReason,
+      };
+    } catch {
+      // Fallback to statistical decision
+      const decision = outcome.decision === 'insufficient_data' ? 'continue' : outcome.decision as any;
+      return {
+        decision,
+        confidence: outcome.confidenceScore,
+        reason: outcome.decisionReason,
+      };
+    }
   }
 }
 

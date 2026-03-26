@@ -365,6 +365,79 @@ export class ContinuousEvaluationAgent {
   getSessionMetrics(sessionId: string): SessionMetrics | undefined {
     return this.sessionMetrics.get(sessionId);
   }
+
+  // ============================================================================
+  // Runtime / App Immune System — Experiment Monitoring
+  // ============================================================================
+
+  /**
+   * Enable runtime experiment monitoring by wiring new event subscriptions.
+   * Called by ExperimentOrchestratorAgent after it starts.
+   */
+  enableRuntimeMonitoring(
+    onPromote: (experimentId: string) => void,
+    onRevert: (experimentId: string) => void
+  ): void {
+    this.eventBus.on(EventType.FRICTION_DETECTED, this.onFrictionDetected.bind(this));
+    this.eventBus.on(EventType.EXPERIMENT_UPDATED, async (event: EventPayload) => {
+      await this.onExperimentUpdated(event, onPromote, onRevert);
+    });
+    this.logger.info('Runtime monitoring enabled');
+  }
+
+  private async onFrictionDetected(event: EventPayload): Promise<void> {
+    const { data } = event;
+    if (!data?.signal) return;
+    this.logger.info(
+      `Friction detected: ${data.signal.type} on ${data.signal.url} ` +
+      `(severity: ${data.signal.severity})`
+    );
+  }
+
+  private async onExperimentUpdated(
+    event: EventPayload,
+    onPromote: (id: string) => void,
+    onRevert: (id: string) => void
+  ): Promise<void> {
+    const { data } = event;
+    const outcome = data?.outcome;
+    const experiment = data?.experiment;
+    if (!outcome || !experiment) return;
+
+    const { confidenceScore, uplift, decision } = outcome;
+
+    this.logger.info(
+      `Experiment ${experiment.id}: confidence=${confidenceScore.toFixed(2)}, ` +
+      `uplift=${(uplift * 100).toFixed(1)}%, decision=${decision}`
+    );
+
+    if (
+      decision === 'promote' &&
+      experiment.autoPromote &&
+      confidenceScore >= experiment.minConfidenceThreshold
+    ) {
+      this.logger.info(`Auto-promoting experiment ${experiment.id}`);
+      this.eventBus.emit({
+        type: EventType.EXPERIMENT_PROMOTE,
+        sessionId: experiment.appId,
+        timestamp: Date.now(),
+        data: { experimentId: experiment.id, reason: 'autonomous', outcome },
+      });
+      onPromote(experiment.id);
+    } else if (
+      decision === 'revert' &&
+      experiment.autoRevert
+    ) {
+      this.logger.info(`Auto-reverting experiment ${experiment.id}`);
+      this.eventBus.emit({
+        type: EventType.EXPERIMENT_REVERT,
+        sessionId: experiment.appId,
+        timestamp: Date.now(),
+        data: { experimentId: experiment.id, reason: 'autonomous', outcome },
+      });
+      onRevert(experiment.id);
+    }
+  }
 }
 
 /**

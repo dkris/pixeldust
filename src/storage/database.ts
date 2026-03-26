@@ -215,6 +215,8 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_agent_executions_session ON agent_executions(session_id);
       CREATE INDEX IF NOT EXISTS idx_agent_executions_agent_type ON agent_executions(agent_type);
     `);
+
+    this.initializeRuntimeTables();
   }
 
   // ============================================================================
@@ -1004,6 +1006,563 @@ export class DatabaseManager {
 
     const stmt = this.db.prepare(query);
     return sessionId ? stmt.all(sessionId) : stmt.all();
+  }
+
+  // ============================================================================
+  // Runtime / App Immune System — Table Init & CRUD
+  // ============================================================================
+
+  initializeRuntimeTables(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        id TEXT PRIMARY KEY,
+        app_id TEXT NOT NULL,
+        cohort_id TEXT,
+        started_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        page_url TEXT NOT NULL,
+        user_agent TEXT,
+        metadata TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_app ON user_sessions(app_id);
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_cohort ON user_sessions(cohort_id);
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_started ON user_sessions(started_at);
+
+      CREATE TABLE IF NOT EXISTS session_events (
+        id TEXT PRIMARY KEY,
+        user_session_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        received_at INTEGER NOT NULL,
+        url TEXT NOT NULL,
+        selector TEXT,
+        element_text TEXT,
+        position TEXT,
+        viewport TEXT,
+        value TEXT,
+        metadata TEXT,
+        FOREIGN KEY (user_session_id) REFERENCES user_sessions(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(user_session_id);
+      CREATE INDEX IF NOT EXISTS idx_session_events_type ON session_events(type);
+      CREATE INDEX IF NOT EXISTS idx_session_events_url ON session_events(url);
+      CREATE INDEX IF NOT EXISTS idx_session_events_ts ON session_events(timestamp);
+
+      CREATE TABLE IF NOT EXISTS friction_signals (
+        id TEXT PRIMARY KEY,
+        user_session_id TEXT NOT NULL,
+        app_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        url TEXT NOT NULL,
+        selector TEXT,
+        element_text TEXT,
+        count INTEGER NOT NULL DEFAULT 1,
+        severity TEXT NOT NULL,
+        context TEXT,
+        detected_at INTEGER NOT NULL,
+        FOREIGN KEY (user_session_id) REFERENCES user_sessions(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_friction_signals_app ON friction_signals(app_id);
+      CREATE INDEX IF NOT EXISTS idx_friction_signals_type ON friction_signals(type);
+      CREATE INDEX IF NOT EXISTS idx_friction_signals_url ON friction_signals(url);
+      CREATE INDEX IF NOT EXISTS idx_friction_signals_detected ON friction_signals(detected_at);
+
+      CREATE TABLE IF NOT EXISTS ui_mutations (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        target_selector TEXT NOT NULL,
+        css_rule TEXT,
+        attribute_changes TEXT,
+        new_content TEXT,
+        script TEXT,
+        description TEXT NOT NULL,
+        generated_by TEXT NOT NULL DEFAULT 'claude',
+        confidence REAL NOT NULL,
+        friction_signal_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (friction_signal_id) REFERENCES friction_signals(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_ui_mutations_experiment ON ui_mutations(experiment_id);
+      CREATE INDEX IF NOT EXISTS idx_ui_mutations_signal ON ui_mutations(friction_signal_id);
+
+      CREATE TABLE IF NOT EXISTS experiments (
+        id TEXT PRIMARY KEY,
+        app_id TEXT NOT NULL,
+        friction_signal_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        traffic_percent INTEGER NOT NULL DEFAULT 10,
+        control_cohort_id TEXT NOT NULL,
+        variant_cohort_id TEXT NOT NULL,
+        min_confidence_threshold REAL NOT NULL DEFAULT 0.95,
+        min_sample_size INTEGER NOT NULL DEFAULT 100,
+        auto_promote INTEGER NOT NULL DEFAULT 0,
+        auto_revert INTEGER NOT NULL DEFAULT 1,
+        started_at INTEGER,
+        ended_at INTEGER,
+        promoted_at INTEGER,
+        reverted_at INTEGER,
+        description TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (friction_signal_id) REFERENCES friction_signals(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_experiments_app ON experiments(app_id);
+      CREATE INDEX IF NOT EXISTS idx_experiments_status ON experiments(status);
+      CREATE INDEX IF NOT EXISTS idx_experiments_signal ON experiments(friction_signal_id);
+
+      CREATE TABLE IF NOT EXISTS experiment_outcomes (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT NOT NULL,
+        measured_at INTEGER NOT NULL,
+        control_sessions INTEGER NOT NULL DEFAULT 0,
+        control_task_completion_rate REAL NOT NULL DEFAULT 0,
+        control_error_rate REAL NOT NULL DEFAULT 0,
+        control_abandonment_rate REAL NOT NULL DEFAULT 0,
+        control_avg_session_duration REAL NOT NULL DEFAULT 0,
+        variant_sessions INTEGER NOT NULL DEFAULT 0,
+        variant_task_completion_rate REAL NOT NULL DEFAULT 0,
+        variant_error_rate REAL NOT NULL DEFAULT 0,
+        variant_abandonment_rate REAL NOT NULL DEFAULT 0,
+        variant_avg_session_duration REAL NOT NULL DEFAULT 0,
+        confidence_score REAL NOT NULL DEFAULT 0,
+        p_value REAL,
+        uplift REAL NOT NULL DEFAULT 0,
+        decision TEXT NOT NULL DEFAULT 'insufficient_data',
+        decision_reason TEXT,
+        FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_outcomes_experiment ON experiment_outcomes(experiment_id);
+      CREATE INDEX IF NOT EXISTS idx_outcomes_measured ON experiment_outcomes(measured_at);
+
+      CREATE TABLE IF NOT EXISTS cohort_assignments (
+        user_session_id TEXT NOT NULL,
+        experiment_id TEXT NOT NULL,
+        cohort_id TEXT NOT NULL,
+        assigned_at INTEGER NOT NULL,
+        PRIMARY KEY (user_session_id, experiment_id),
+        FOREIGN KEY (experiment_id) REFERENCES experiments(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_cohort_assignments_experiment ON cohort_assignments(experiment_id);
+    `);
+  }
+
+  // --- UserSession ---
+
+  upsertUserSession(session: {
+    id: string; appId: string; cohortId?: string;
+    startedAt: number; lastSeenAt: number;
+    pageUrl: string; userAgent?: string; metadata?: Record<string, any>;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO user_sessions (id, app_id, cohort_id, started_at, last_seen_at, page_url, user_agent, metadata, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        last_seen_at = excluded.last_seen_at,
+        cohort_id = COALESCE(excluded.cohort_id, cohort_id)
+    `);
+    stmt.run(
+      session.id, session.appId, session.cohortId || null,
+      session.startedAt, session.lastSeenAt, session.pageUrl,
+      session.userAgent || null,
+      session.metadata ? JSON.stringify(session.metadata) : null,
+      Date.now()
+    );
+  }
+
+  getUserSession(id: string): any | null {
+    const row = (this.db.prepare('SELECT * FROM user_sessions WHERE id = ?').get(id)) as any;
+    if (!row) return null;
+    return {
+      id: row.id, appId: row.app_id, cohortId: row.cohort_id,
+      startedAt: row.started_at, lastSeenAt: row.last_seen_at,
+      pageUrl: row.page_url, userAgent: row.user_agent,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+    };
+  }
+
+  // --- SessionEvents ---
+
+  saveSessionEvents(events: Array<{
+    id: string; userSessionId: string; type: string;
+    timestamp: number; receivedAt: number; url: string;
+    selector?: string; elementText?: string;
+    position?: { x: number; y: number };
+    viewport?: { width: number; height: number };
+    value?: string; metadata?: Record<string, any>;
+  }>): void {
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO session_events
+        (id, user_session_id, type, timestamp, received_at, url,
+         selector, element_text, position, viewport, value, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertMany = this.db.transaction((evts: typeof events) => {
+      for (const e of evts) {
+        stmt.run(
+          e.id, e.userSessionId, e.type, e.timestamp, e.receivedAt, e.url,
+          e.selector || null, e.elementText || null,
+          e.position ? JSON.stringify(e.position) : null,
+          e.viewport ? JSON.stringify(e.viewport) : null,
+          e.value || null,
+          e.metadata ? JSON.stringify(e.metadata) : null
+        );
+      }
+    });
+    insertMany(events);
+  }
+
+  getSessionEvents(userSessionId: string, type?: string): any[] {
+    const query = type
+      ? 'SELECT * FROM session_events WHERE user_session_id = ? AND type = ? ORDER BY timestamp'
+      : 'SELECT * FROM session_events WHERE user_session_id = ? ORDER BY timestamp';
+    const rows = (type
+      ? this.db.prepare(query).all(userSessionId, type)
+      : this.db.prepare(query).all(userSessionId)) as any[];
+    return rows.map(r => ({
+      id: r.id, userSessionId: r.user_session_id, type: r.type,
+      timestamp: r.timestamp, receivedAt: r.received_at, url: r.url,
+      selector: r.selector, elementText: r.element_text,
+      position: r.position ? JSON.parse(r.position) : undefined,
+      viewport: r.viewport ? JSON.parse(r.viewport) : undefined,
+      value: r.value,
+      metadata: r.metadata ? JSON.parse(r.metadata) : undefined,
+    }));
+  }
+
+  countSessionEventsByType(appId: string, type: string, url: string, since: number): number {
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as cnt FROM session_events se
+      JOIN user_sessions us ON se.user_session_id = us.id
+      WHERE us.app_id = ? AND se.type = ? AND se.url = ? AND se.timestamp >= ?
+    `);
+    const row = stmt.get(appId, type, url, since) as any;
+    return row?.cnt ?? 0;
+  }
+
+  // --- FrictionSignals ---
+
+  saveFrictionSignal(signal: {
+    id: string; userSessionId: string; appId: string; type: string;
+    url: string; selector?: string; elementText?: string; count: number;
+    severity: string; context?: Record<string, any>; detectedAt: number;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO friction_signals
+        (id, user_session_id, app_id, type, url, selector, element_text,
+         count, severity, context, detected_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      signal.id, signal.userSessionId, signal.appId, signal.type, signal.url,
+      signal.selector || null, signal.elementText || null, signal.count, signal.severity,
+      signal.context ? JSON.stringify(signal.context) : null, signal.detectedAt
+    );
+  }
+
+  getFrictionSignals(appId: string, since?: number): any[] {
+    const query = since
+      ? 'SELECT * FROM friction_signals WHERE app_id = ? AND detected_at >= ? ORDER BY detected_at DESC'
+      : 'SELECT * FROM friction_signals WHERE app_id = ? ORDER BY detected_at DESC';
+    const rows = (since
+      ? this.db.prepare(query).all(appId, since)
+      : this.db.prepare(query).all(appId)) as any[];
+    return rows.map(r => ({
+      id: r.id, userSessionId: r.user_session_id, appId: r.app_id,
+      type: r.type, url: r.url, selector: r.selector, elementText: r.element_text,
+      count: r.count, severity: r.severity,
+      context: r.context ? JSON.parse(r.context) : undefined,
+      detectedAt: r.detected_at,
+    }));
+  }
+
+  getFrictionSignal(id: string): any | null {
+    const row = (this.db.prepare('SELECT * FROM friction_signals WHERE id = ?').get(id)) as any;
+    if (!row) return null;
+    return {
+      id: row.id, userSessionId: row.user_session_id, appId: row.app_id,
+      type: row.type, url: row.url, selector: row.selector, elementText: row.element_text,
+      count: row.count, severity: row.severity,
+      context: row.context ? JSON.parse(row.context) : undefined,
+      detectedAt: row.detected_at,
+    };
+  }
+
+  // --- UIMutations ---
+
+  saveUIMutation(mutation: {
+    id: string; experimentId: string; type: string; targetSelector: string;
+    cssRule?: string; attributeChanges?: Record<string, string>;
+    newContent?: string; script?: string; description: string;
+    generatedBy: string; confidence: number; frictionSignalId: string; createdAt: number;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO ui_mutations
+        (id, experiment_id, type, target_selector, css_rule, attribute_changes,
+         new_content, script, description, generated_by, confidence, friction_signal_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      mutation.id, mutation.experimentId, mutation.type, mutation.targetSelector,
+      mutation.cssRule || null,
+      mutation.attributeChanges ? JSON.stringify(mutation.attributeChanges) : null,
+      mutation.newContent || null, mutation.script || null, mutation.description,
+      mutation.generatedBy, mutation.confidence, mutation.frictionSignalId, mutation.createdAt
+    );
+  }
+
+  getUIMutations(experimentId: string): any[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM ui_mutations WHERE experiment_id = ? ORDER BY created_at'
+    ).all(experimentId) as any[];
+    return rows.map(r => ({
+      id: r.id, experimentId: r.experiment_id, type: r.type,
+      targetSelector: r.target_selector, cssRule: r.css_rule,
+      attributeChanges: r.attribute_changes ? JSON.parse(r.attribute_changes) : undefined,
+      newContent: r.new_content, script: r.script, description: r.description,
+      generatedBy: r.generated_by, confidence: r.confidence,
+      frictionSignalId: r.friction_signal_id, createdAt: r.created_at,
+    }));
+  }
+
+  // --- Experiments ---
+
+  saveExperiment(exp: {
+    id: string; appId: string; frictionSignalId: string; status: string;
+    trafficPercent: number; controlCohortId: string; variantCohortId: string;
+    minConfidenceThreshold: number; minSampleSize: number;
+    autoPromote: boolean; autoRevert: boolean;
+    startedAt?: number; endedAt?: number; promotedAt?: number; revertedAt?: number;
+    description?: string; createdAt: number; updatedAt: number;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO experiments
+        (id, app_id, friction_signal_id, status, traffic_percent,
+         control_cohort_id, variant_cohort_id, min_confidence_threshold, min_sample_size,
+         auto_promote, auto_revert, started_at, ended_at, promoted_at, reverted_at,
+         description, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      exp.id, exp.appId, exp.frictionSignalId, exp.status, exp.trafficPercent,
+      exp.controlCohortId, exp.variantCohortId, exp.minConfidenceThreshold, exp.minSampleSize,
+      exp.autoPromote ? 1 : 0, exp.autoRevert ? 1 : 0,
+      exp.startedAt || null, exp.endedAt || null, exp.promotedAt || null, exp.revertedAt || null,
+      exp.description || null, exp.createdAt, exp.updatedAt
+    );
+  }
+
+  updateExperimentStatus(id: string, status: string, extra?: {
+    startedAt?: number; endedAt?: number; promotedAt?: number; revertedAt?: number;
+  }): void {
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      UPDATE experiments SET status = ?, updated_at = ?,
+        started_at = COALESCE(?, started_at),
+        ended_at = COALESCE(?, ended_at),
+        promoted_at = COALESCE(?, promoted_at),
+        reverted_at = COALESCE(?, reverted_at)
+      WHERE id = ?
+    `);
+    stmt.run(
+      status, now,
+      extra?.startedAt || null, extra?.endedAt || null,
+      extra?.promotedAt || null, extra?.revertedAt || null,
+      id
+    );
+  }
+
+  updateExperimentConfig(id: string, config: {
+    trafficPercent?: number; autoPromote?: boolean; autoRevert?: boolean;
+  }): void {
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      UPDATE experiments SET
+        traffic_percent = COALESCE(?, traffic_percent),
+        auto_promote = COALESCE(?, auto_promote),
+        auto_revert = COALESCE(?, auto_revert),
+        updated_at = ?
+      WHERE id = ?
+    `);
+    stmt.run(
+      config.trafficPercent ?? null,
+      config.autoPromote !== undefined ? (config.autoPromote ? 1 : 0) : null,
+      config.autoRevert !== undefined ? (config.autoRevert ? 1 : 0) : null,
+      now, id
+    );
+  }
+
+  getExperiment(id: string): any | null {
+    const row = (this.db.prepare('SELECT * FROM experiments WHERE id = ?').get(id)) as any;
+    if (!row) return null;
+    return this.mapExperimentRow(row);
+  }
+
+  getExperiments(appId: string, status?: string): any[] {
+    const query = status
+      ? 'SELECT * FROM experiments WHERE app_id = ? AND status = ? ORDER BY created_at DESC'
+      : 'SELECT * FROM experiments WHERE app_id = ? ORDER BY created_at DESC';
+    const rows = (status
+      ? this.db.prepare(query).all(appId, status)
+      : this.db.prepare(query).all(appId)) as any[];
+    return rows.map(r => this.mapExperimentRow(r));
+  }
+
+  private mapExperimentRow(row: any): any {
+    return {
+      id: row.id, appId: row.app_id, frictionSignalId: row.friction_signal_id,
+      status: row.status, trafficPercent: row.traffic_percent,
+      controlCohortId: row.control_cohort_id, variantCohortId: row.variant_cohort_id,
+      minConfidenceThreshold: row.min_confidence_threshold, minSampleSize: row.min_sample_size,
+      autoPromote: row.auto_promote === 1, autoRevert: row.auto_revert === 1,
+      startedAt: row.started_at, endedAt: row.ended_at,
+      promotedAt: row.promoted_at, revertedAt: row.reverted_at,
+      description: row.description, createdAt: row.created_at, updatedAt: row.updated_at,
+    };
+  }
+
+  // --- ExperimentOutcomes ---
+
+  saveExperimentOutcome(outcome: {
+    id: string; experimentId: string; measuredAt: number;
+    controlSessions: number; controlTaskCompletionRate: number;
+    controlErrorRate: number; controlAbandonmentRate: number; controlAvgSessionDuration: number;
+    variantSessions: number; variantTaskCompletionRate: number;
+    variantErrorRate: number; variantAbandonmentRate: number; variantAvgSessionDuration: number;
+    confidenceScore: number; pValue?: number; uplift: number;
+    decision: string; decisionReason?: string;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO experiment_outcomes
+        (id, experiment_id, measured_at,
+         control_sessions, control_task_completion_rate, control_error_rate,
+         control_abandonment_rate, control_avg_session_duration,
+         variant_sessions, variant_task_completion_rate, variant_error_rate,
+         variant_abandonment_rate, variant_avg_session_duration,
+         confidence_score, p_value, uplift, decision, decision_reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      outcome.id, outcome.experimentId, outcome.measuredAt,
+      outcome.controlSessions, outcome.controlTaskCompletionRate, outcome.controlErrorRate,
+      outcome.controlAbandonmentRate, outcome.controlAvgSessionDuration,
+      outcome.variantSessions, outcome.variantTaskCompletionRate, outcome.variantErrorRate,
+      outcome.variantAbandonmentRate, outcome.variantAvgSessionDuration,
+      outcome.confidenceScore, outcome.pValue ?? null, outcome.uplift,
+      outcome.decision, outcome.decisionReason || null
+    );
+  }
+
+  getExperimentOutcomes(experimentId: string): any[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM experiment_outcomes WHERE experiment_id = ? ORDER BY measured_at'
+    ).all(experimentId) as any[];
+    return rows.map(r => ({
+      id: r.id, experimentId: r.experiment_id, measuredAt: r.measured_at,
+      controlSessions: r.control_sessions,
+      controlTaskCompletionRate: r.control_task_completion_rate,
+      controlErrorRate: r.control_error_rate,
+      controlAbandonmentRate: r.control_abandonment_rate,
+      controlAvgSessionDuration: r.control_avg_session_duration,
+      variantSessions: r.variant_sessions,
+      variantTaskCompletionRate: r.variant_task_completion_rate,
+      variantErrorRate: r.variant_error_rate,
+      variantAbandonmentRate: r.variant_abandonment_rate,
+      variantAvgSessionDuration: r.variant_avg_session_duration,
+      confidenceScore: r.confidence_score, pValue: r.p_value,
+      uplift: r.uplift, decision: r.decision, decisionReason: r.decision_reason,
+    }));
+  }
+
+  getLatestExperimentOutcome(experimentId: string): any | null {
+    const row = this.db.prepare(
+      'SELECT * FROM experiment_outcomes WHERE experiment_id = ? ORDER BY measured_at DESC LIMIT 1'
+    ).get(experimentId) as any;
+    if (!row) return null;
+    return {
+      id: row.id, experimentId: row.experiment_id, measuredAt: row.measured_at,
+      controlSessions: row.control_sessions,
+      controlTaskCompletionRate: row.control_task_completion_rate,
+      controlErrorRate: row.control_error_rate,
+      controlAbandonmentRate: row.control_abandonment_rate,
+      controlAvgSessionDuration: row.control_avg_session_duration,
+      variantSessions: row.variant_sessions,
+      variantTaskCompletionRate: row.variant_task_completion_rate,
+      variantErrorRate: row.variant_error_rate,
+      variantAbandonmentRate: row.variant_abandonment_rate,
+      variantAvgSessionDuration: row.variant_avg_session_duration,
+      confidenceScore: row.confidence_score, pValue: row.p_value,
+      uplift: row.uplift, decision: row.decision, decisionReason: row.decision_reason,
+    };
+  }
+
+  // --- CohortAssignments ---
+
+  saveCohortAssignment(assignment: {
+    userSessionId: string; experimentId: string; cohortId: string; assignedAt: number;
+  }): void {
+    const stmt = this.db.prepare(`
+      INSERT OR IGNORE INTO cohort_assignments
+        (user_session_id, experiment_id, cohort_id, assigned_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    stmt.run(assignment.userSessionId, assignment.experimentId, assignment.cohortId, assignment.assignedAt);
+  }
+
+  getCohortAssignment(userSessionId: string, experimentId: string): any | null {
+    const row = this.db.prepare(
+      'SELECT * FROM cohort_assignments WHERE user_session_id = ? AND experiment_id = ?'
+    ).get(userSessionId, experimentId) as any;
+    if (!row) return null;
+    return {
+      userSessionId: row.user_session_id, experimentId: row.experiment_id,
+      cohortId: row.cohort_id, assignedAt: row.assigned_at,
+    };
+  }
+
+  getCohortSessionIds(experimentId: string, cohortId: string): string[] {
+    const rows = this.db.prepare(
+      'SELECT user_session_id FROM cohort_assignments WHERE experiment_id = ? AND cohort_id = ?'
+    ).all(experimentId, cohortId) as any[];
+    return rows.map(r => r.user_session_id);
+  }
+
+  getDashboardSummary(appId: string): {
+    activeExperiments: number;
+    pendingSignals: number;
+    recentDecisions: any[];
+    overallUplift: number;
+  } {
+    const active = (this.db.prepare(
+      "SELECT COUNT(*) as cnt FROM experiments WHERE app_id = ? AND status = 'RUNNING'"
+    ).get(appId) as any)?.cnt ?? 0;
+
+    const pending = (this.db.prepare(
+      'SELECT COUNT(*) as cnt FROM friction_signals WHERE app_id = ? AND detected_at > ?'
+    ).get(appId, Date.now() - 24 * 60 * 60 * 1000) as any)?.cnt ?? 0;
+
+    const recentDecisions = this.db.prepare(`
+      SELECT e.id, e.status, eo.decision, eo.uplift, eo.confidence_score, eo.measured_at
+      FROM experiments e
+      JOIN experiment_outcomes eo ON eo.experiment_id = e.id
+      WHERE e.app_id = ? AND eo.decision IN ('promote','revert')
+      ORDER BY eo.measured_at DESC LIMIT 10
+    `).all(appId) as any[];
+
+    const upliftRow = this.db.prepare(`
+      SELECT AVG(eo.uplift) as avg_uplift
+      FROM experiments e
+      JOIN experiment_outcomes eo ON eo.experiment_id = e.id
+      WHERE e.app_id = ? AND e.status = 'PROMOTED'
+    `).get(appId) as any;
+
+    return {
+      activeExperiments: active,
+      pendingSignals: pending,
+      recentDecisions,
+      overallUplift: upliftRow?.avg_uplift ?? 0,
+    };
   }
 
   close(): void {

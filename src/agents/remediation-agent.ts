@@ -7,6 +7,9 @@ import {
   RemediationProposal,
   Solution,
   RemediationStatus,
+  FrictionSignal,
+  UIMutation,
+  MutationType,
 } from '../types';
 import Anthropic from '@anthropic-ai/sdk';
 import { v4 as uuidv4 } from 'uuid';
@@ -195,6 +198,109 @@ Return your response as JSON:
 
       return description;
     }).join('\n');
+  }
+
+  // ============================================================================
+  // Runtime: Mutation Proposal (App Immune System)
+  // ============================================================================
+
+  /**
+   * Generate UI mutations to address a friction signal.
+   * Returns an array of UIMutation objects (CSS/DOM patches) rather than
+   * source-code CodeChange objects. Reuses the same Anthropic client and
+   * JSON-parse-with-fallback pattern as generateProposal().
+   */
+  async proposeMutation(
+    signal: FrictionSignal,
+    config: any
+  ): Promise<UIMutation[]> {
+    const prompt = `You are a UX engineer specialising in production web app optimisation.
+
+A friction signal was detected in a live application:
+- Type: ${signal.type}
+- URL: ${signal.url}
+- Element: ${signal.selector ?? 'unknown'} ${signal.elementText ? `("${signal.elementText}")` : ''}
+- Severity: ${signal.severity}
+- Occurrences: ${signal.count}
+${signal.context ? `- Context: ${JSON.stringify(signal.context)}` : ''}
+
+Generate 1-3 UI mutations that would fix this friction.
+Prefer css_patch mutations over all others — they are safest and instantly reversible.
+Only use dom_attribute or copy_change when CSS alone cannot solve the problem.
+Do NOT use flow_redirect or component_swap unless absolutely necessary.
+
+Return ONLY valid JSON (no markdown, no extra text):
+{
+  "mutations": [
+    {
+      "type": "css_patch",
+      "targetSelector": ".my-button",
+      "cssRule": ".my-button { ... }",
+      "description": "One-line human description of what this fixes",
+      "confidence": 0.85
+    }
+  ]
+}
+
+For dom_attribute mutations, use "attributeChanges": { "aria-label": "new value" } instead of cssRule.
+For copy_change mutations, use "newContent": "new text" instead of cssRule.`;
+
+    try {
+      const response = await this.ai.messages.create({
+        model: config.ai?.model ?? 'claude-sonnet-4-5-20250929',
+        max_tokens: config.ai?.maxTokens ?? 2048,
+        temperature: 0.3,   // Lower temperature for structured output
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      const content = response.content[0];
+      if (content.type !== 'text') throw new Error('Non-text AI response');
+
+      const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON in AI response');
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const rawMutations: any[] = parsed.mutations ?? [];
+
+      return rawMutations
+        .filter(m => m.type && m.targetSelector && m.description)
+        .map(m => ({
+          id: uuidv4(),
+          experimentId: '',   // Filled in by MutationProposalAgent after experiment creation
+          type: m.type as MutationType,
+          targetSelector: m.targetSelector,
+          cssRule: m.cssRule,
+          attributeChanges: m.attributeChanges,
+          newContent: m.newContent,
+          script: m.script,
+          description: m.description,
+          generatedBy: 'claude' as const,
+          confidence: typeof m.confidence === 'number' ? m.confidence : 0.7,
+          frictionSignalId: signal.id,
+          createdAt: Date.now(),
+        }));
+    } catch (error) {
+      this.logger.error('proposeMutation: AI call failed, using CSS fallback', error as Error);
+      return this.getFallbackMutation(signal);
+    }
+  }
+
+  private getFallbackMutation(signal: FrictionSignal): UIMutation[] {
+    if (!signal.selector) return [];
+    // Generic visibility improvement for rage-click / dead-click signals
+    const cssRule = `${signal.selector} { cursor: pointer !important; outline: 2px solid #0070f3 !important; }`;
+    return [{
+      id: uuidv4(),
+      experimentId: '',
+      type: 'css_patch',
+      targetSelector: signal.selector,
+      cssRule,
+      description: `Improve visibility of ${signal.selector} to reduce ${signal.type}`,
+      generatedBy: 'claude',
+      confidence: 0.4,
+      frictionSignalId: signal.id,
+      createdAt: Date.now(),
+    }];
   }
 
   private getFallbackProposal(comparison: any): RemediationProposal {
